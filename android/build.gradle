@@ -4,18 +4,26 @@ buildscript {
         minSdkVersion = 24
         compileSdkVersion = 36
         targetSdkVersion = 36
+        compileSdk = 36
+        targetSdk = 36
+        minSdk = 24
+        kspVersion = "2.1.20-1.0.32"
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
     }
     repositories {
         google()
         mavenCentral()
+        gradlePluginPortal()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
-        classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("com.google.devtools.ksp:symbol-processing-gradle-plugin:${kspVersion}")
     }
 }
 
-apply plugin: "com.facebook.react.rootproject"
+plugins {
+    id("com.android.application") version "8.5.0" apply false
+    id("com.facebook.react.rootproject")
+    id("expo-root-project")
+    id("org.jetbrains.kotlin.android") version "2.1.20" apply false
+}

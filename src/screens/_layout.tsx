@@ -1,0 +1,68 @@
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
+import 'react-native-reanimated';
+
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAdminStore } from '@/store/adminStore';
+import { BrandAtmosphere } from '@/components/brand-atmosphere';
+import { VisualAlert } from '@/components/ui/visual-alert';
+
+export const unstable_settings = {
+  anchor: '(tabs)',
+};
+
+export default function RootLayout() {
+  const colorScheme = useColorScheme();
+  const { user, isInitialized } = useAdminStore();
+  const segments = useSegments();
+  const router = useRouter();
+  
+  useEffect(() => {
+    // Silence 'keep-awake' error on Web
+    if (Platform.OS === 'web') {
+      const originalHandler = (globalThis as any).window?.onunhandledrejection;
+      (globalThis as any).window.onunhandledrejection = (event: any) => {
+        if (event.reason?.message?.includes('Unable to activate keep awake')) {
+          event.preventDefault();
+          return;
+        }
+        if (originalHandler) originalHandler.call((globalThis as any).window, event);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    // Check if the current route is in the auth group
+    const inAuthGroup = segments[0] === 'auth';
+
+    const timer = setTimeout(() => {
+      if (!user && !inAuthGroup) {
+        router.replace('/auth/login');
+      } else if (user && inAuthGroup) {
+        router.replace('/(tabs)');
+      }
+    }, 1);
+
+    return () => clearTimeout(timer);
+  }, [user, segments, isInitialized]);
+
+  return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <BrandAtmosphere />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/login" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/admin-login" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+      </Stack>
+      <VisualAlert />
+      <StatusBar style="auto" />
+    </ThemeProvider>
+  );
+}

@@ -1,5 +1,5 @@
 {
-  "name": "GroundApp",
+  "name": "ground-app",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -10,10 +10,23 @@
     "test": "jest"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@react-native/new-app-screen": "0.85.2",
+    "@react-navigation/native": "^7.2.2",
+    "@react-navigation/native-stack": "^7.14.12",
+    "expo": "^55.0.18",
+    "expo-constants": "^55.0.15",
+    "expo-image": "^55.0.9",
+    "expo-linear-gradient": "^55.0.13",
+    "expo-linking": "^55.0.14",
+    "expo-router": "^55.0.13",
+    "expo-status-bar": "^55.0.5",
     "react": "19.2.3",
     "react-native": "0.85.2",
-    "@react-native/new-app-screen": "0.85.2",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-reanimated": "~3.16.1",
+    "react-native-safe-area-context": "^5.7.0",
+    "react-native-screens": "^4.24.0",
+    "react-native-worklets-core": "^1.6.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -30,10 +43,14 @@
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
+    "babel-plugin-module-resolver": "^5.0.3",
+    "dotenv": "^17.4.2",
+    "dotenv-expand": "^13.0.0",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
+    "require-from-string": "^2.0.2",
     "typescript": "^5.8.3"
   },
   "engines": {
