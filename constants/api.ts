@@ -27,4 +27,5 @@ export const ENDPOINTS = {
 export const API_HEADERS = {
   "Content-Type": "application/json",
   Accept: "application/json",
+  "ngrok-skip-browser-warning": "true",
 };

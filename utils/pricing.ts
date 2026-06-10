@@ -9,29 +9,45 @@ export const getSlotPrice = (
   date: Date,
   isFullDay: boolean = false,
   fullDayType: "12h" | "24h" = "12h",
-  config?: { hourly?: number; price12h?: number; price24h?: number },
+  config?: { 
+    hourly?: number; price12h?: number; price24h?: number;
+    weekendHourly?: number; weekendPrice12h?: number; weekendPrice24h?: number;
+  },
 ): PricingResult => {
   const day = date.getDay();
   const isWeekend = day === 0 || day === 6; // Sunday or Saturday
 
   let basePrice = config?.hourly ?? 1200;
+  
+  if (isWeekend && config?.weekendHourly !== undefined) {
+    basePrice = config.weekendHourly;
+  } else if (isWeekend) {
+    basePrice = basePrice * 1.3; // Fallback
+  }
+
+  let finalPrice = basePrice;
 
   if (isFullDay) {
     if (fullDayType === "24h") {
+      finalPrice = (isWeekend && config?.weekendPrice24h !== undefined) 
+        ? config.weekendPrice24h 
+        : (config?.price24h ?? 10000);
       basePrice = config?.price24h ?? 10000;
     } else {
+      finalPrice = (isWeekend && config?.weekendPrice12h !== undefined) 
+        ? config.weekendPrice12h 
+        : (config?.price12h ?? 6000);
       basePrice = config?.price12h ?? 6000;
     }
   }
 
-  const surchargeMultiplier = isWeekend ? 1.3 : 1.0;
-  const finalPrice = Math.round(basePrice * surchargeMultiplier);
+  const surcharge = isWeekend ? (finalPrice - basePrice) : 0;
 
   return {
     basePrice,
     finalPrice,
     isWeekend,
-    surcharge: finalPrice - basePrice,
+    surcharge,
   };
 };
 

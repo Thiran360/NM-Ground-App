@@ -21,7 +21,6 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 import { useAdminStore } from "@/store/admin-store";
 import { MOCK_MATCHES } from "@/utils/sports-data";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInUp, ZoomIn } from "react-native-reanimated";
 
 export default function HomeScreen() {
   const { user, logout, showAlert, fetchProfile, fetchWallet, fetchBookings } =
@@ -31,14 +30,40 @@ export default function HomeScreen() {
   const router = useRouter();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [apiWalletPoints, setApiWalletPoints] = useState<number | null>(null);
+
+  const fetchApiWallet = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(
+        `https://api.codingboss.in/booking/wallet/?userId=${user.id}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setApiWalletPoints(data.wallet_points ?? 0);
+      } else {
+        setApiWalletPoints(0);
+      }
+    } catch (e) {
+      console.warn("Wallet API fetch failed:", e);
+      setApiWalletPoints(0);
+    }
+  };
 
   useEffect(() => {
     fetchProfile();
-  }, []);
+    fetchApiWallet();
+  }, [user?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchProfile(), fetchWallet(), fetchBookings()]);
+    await Promise.all([fetchProfile(), fetchWallet(), fetchBookings(), fetchApiWallet()]);
     setRefreshing(false);
   };
 
@@ -87,7 +112,7 @@ export default function HomeScreen() {
               style={styles.headerGradient}
             />
             <View style={styles.heroContent}>
-              <Animated.View entering={FadeInUp.delay(200).duration(800)}>
+              <View>
                 <View style={styles.welcomeRow}>
                   <ThemedText type="title" style={styles.heroTitle}>
                     Hello, {user?.name || "Player"}!
@@ -97,7 +122,7 @@ export default function HomeScreen() {
                 <ThemedText style={styles.heroSubtitle}>
                   Ready for your next big match?
                 </ThemedText>
-              </Animated.View>
+              </View>
             </View>
           </View>
         }
@@ -108,10 +133,7 @@ export default function HomeScreen() {
             Championship Hub
           </ThemedText>
           <View style={styles.actionGrid}>
-            <Animated.View
-              entering={ZoomIn.delay(200).springify()}
-              style={{ flex: 1 }}
-            >
+            <View style={{ flex: 1 }}>
               <TouchableOpacity
                 style={[styles.actionCard, { backgroundColor: cardBg }]}
                 onPress={() => router.push("/sports" as any)}
@@ -135,12 +157,9 @@ export default function HomeScreen() {
                   </ThemedText>
                 </View>
               </TouchableOpacity>
-            </Animated.View>
+            </View>
 
-            <Animated.View
-              entering={ZoomIn.delay(350).springify()}
-              style={{ flex: 1 }}
-            >
+            <View style={{ flex: 1 }}>
               <TouchableOpacity
                 style={[styles.actionCard, { backgroundColor: cardBg }]}
                 onPress={() =>
@@ -162,12 +181,9 @@ export default function HomeScreen() {
                   <ThemedText style={styles.actionSub}>24 Ongoing</ThemedText>
                 </View>
               </TouchableOpacity>
-            </Animated.View>
+            </View>
 
-            <Animated.View
-              entering={ZoomIn.delay(500).springify()}
-              style={{ flex: 1 }}
-            >
+            <View style={{ flex: 1 }}>
               <TouchableOpacity
                 style={[styles.actionCard, { backgroundColor: cardBg }]}
                 onPress={() =>
@@ -189,7 +205,7 @@ export default function HomeScreen() {
                   <ThemedText style={styles.actionSub}>Pro Matchup</ThemedText>
                 </View>
               </TouchableOpacity>
-            </Animated.View>
+            </View>
           </View>
         </View>
 
@@ -259,7 +275,7 @@ export default function HomeScreen() {
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Banking & Rewards
           </ThemedText>
-          <Animated.View entering={FadeInUp.delay(600).duration(800)}>
+          <View>
             <TouchableOpacity
               style={styles.premiumWalletCard}
               onPress={() => router.push("/wallet" as any)}
@@ -277,34 +293,17 @@ export default function HomeScreen() {
                   </View>
                   <View>
                     <ThemedText style={styles.premiumWalletLabel}>
-                      TOTAL NM GREENS BALANCE
+                      TOTAL NM GREENS POINTS
                     </ThemedText>
                     <ThemedText style={styles.premiumWalletValue}>
-                      ₹{user?.walletBalance || 0}
+                      {apiWalletPoints !== null ? apiWalletPoints : 0} pts
                     </ThemedText>
-                  </View>
-                </View>
-                <View style={styles.pointsStatus}>
-                  <View style={styles.pointsPill}>
-                    <MaterialCommunityIcons
-                      name="star-circle"
-                      size={18}
-                      color="#F9A825"
-                    />
-                    <View>
-                      <ThemedText style={styles.pointsTitle}>
-                        {user?.loyaltyPoints || 0}
-                      </ThemedText>
-                      <ThemedText style={styles.pointsSubtitle}>
-                        REWARD PTS
-                      </ThemedText>
-                    </View>
                   </View>
                 </View>
               </View>
               {/* Shimmer Effect Overlay - Removed for performance */}
             </TouchableOpacity>
-          </Animated.View>
+          </View>
         </View>
 
         {/* Modern Footer */}

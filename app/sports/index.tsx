@@ -80,10 +80,14 @@ export default function SportsDashboard() {
     basePrice,
     price12h,
     price24h,
+    weekendBasePrice,
+    weekendPrice12h,
+    weekendPrice24h,
     showAlert,
     grounds: storeGrounds,
     fetchGrounds,
     bookings,
+    heldSlots,
   } = useAdminStore();
   const GROUNDS_DATA = storeGrounds.length > 0 ? storeGrounds : GROUNDS;
   const [selectedGround, setSelectedGround] = useState(GROUNDS_DATA[0]);
@@ -109,10 +113,12 @@ export default function SportsDashboard() {
   const mutedColor = useThemeColor({}, "muted");
   const [bookingMode, setBookingMode] = useState<"hourly" | "full">("hourly");
   const [fullDayType, setFullDayType] = useState<"12h" | "24h">("12h");
+  const [availableModes, setAvailableModes] = useState<("hourly" | "full")[]>(["hourly", "full"]);
   const [showCalendar, setShowCalendar] = useState(false);
   const [policyMsg, setPolicyMsg] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [dynamicBookedDates, setDynamicBookedDates] = useState<string[]>([]);
+  const [apiTimeSlots, setApiTimeSlots] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
 
   const bookedDates = useMemo(() => {
@@ -160,8 +166,11 @@ export default function SportsDashboard() {
         hourly: basePrice,
         price12h,
         price24h,
+        weekendHourly: weekendBasePrice,
+        weekendPrice12h,
+        weekendPrice24h,
       }),
-    [selectedDate, bookingMode, fullDayType, basePrice, price12h, price24h],
+    [selectedDate, bookingMode, fullDayType, basePrice, price12h, price24h, weekendBasePrice, weekendPrice12h, weekendPrice24h],
   );
 
   const renderDateItem = ({ item }: { item: Date }) => {
@@ -243,12 +252,91 @@ export default function SportsDashboard() {
     return list;
   }, []);
 
-  // Force Full Day mode for Cricket Ground Big
+  // Fetch slots to determine booking modes dynamically
   useEffect(() => {
-    if (selectedGround.id === "ground-a" && bookingMode !== "full") {
-      setBookingMode("full");
+    const fetchModes = async () => {
+      try {
+        const apiId = selectedGround.id === "ground-a" ? 1 : (selectedGround.id === "ground-b" ? 2 : parseInt(selectedGround.id.replace(/\D/g, '')) || 1);
+        const res = await fetch(`https://api.codingboss.in/booking/grounds-slots/${apiId}/`, {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "ngrok-skip-browser-warning": "true",
+          }
+        });
+        if (!res.ok) throw new Error("Failed to fetch slots");
+        const data = await res.json();
+
+        const hasHourly = data.some((s: any) => s.slot_type === "hourly");
+        const hasFull = data.some((s: any) => s.slot_type === "12hr" || s.slot_type === "24hr" || s.slot_type === "full_day");
+
+        const modes: ("hourly" | "full")[] = [];
+        if (hasHourly) modes.push("hourly");
+        if (hasFull) modes.push("full");
+
+        if (modes.length === 0) modes.push("hourly", "full"); // Fallback
+
+        setAvailableModes(modes);
+
+        setBookingMode((prev) => (modes.includes(prev) ? prev : modes[0]));
+      } catch (err) {
+        console.error("Failed to fetch ground slots:", err);
+        setAvailableModes(["hourly", "full"]);
+      }
+    };
+    fetchModes();
+  }, [selectedGround.id]);
+
+  useEffect(() => {
+    const isGround2 = String(selectedGround.id) === "ground-b" || String(selectedGround.id) === "2";
+    if (!isGround2) {
+      setApiTimeSlots([]);
+      return;
     }
-  }, [selectedGround.id, bookingMode]);
+    const fetchTimeSlots = async () => {
+      try {
+        const res = await fetch("https://api.codingboss.in/booking/timeslots/", {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "ngrok-skip-browser-warning": "true",
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setApiTimeSlots(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch timeslots:", err);
+      }
+    };
+    fetchTimeSlots();
+  }, [selectedGround.id]);
+
+  const [apiSlotsData, setApiSlotsData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchDateSlots = async () => {
+      try {
+        const apiId = selectedGround.id === "ground-a" ? 1 : (selectedGround.id === "ground-b" ? 2 : parseInt(selectedGround.id.replace(/\D/g, '')) || 1);
+        const dateStr = selectedDate.toISOString().split("T")[0];
+        const res = await fetch(`https://api.codingboss.in/booking/grounds/${apiId}/available-slots/?date=${dateStr}`, {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "ngrok-skip-browser-warning": "true",
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setApiSlotsData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch date-wise slots:", err);
+      }
+    };
+    fetchDateSlots();
+  }, [selectedGround.id, selectedDate]);
 
   useEffect(() => {
     const index = dates.findIndex(
@@ -270,12 +358,12 @@ export default function SportsDashboard() {
       bookingMode === "full"
         ? []
         : Object.keys(locks)
-            .filter(
-              (key) =>
-                key.startsWith(selectedGround.id) &&
-                locks[key].status === "selected",
-            )
-            .map((key) => key.split("-").pop());
+          .filter(
+            (key) =>
+              key.startsWith(selectedGround.id) &&
+              locks[key].status === "selected",
+          )
+          .map((key) => key.split("-").pop());
 
     if (bookingMode === "hourly" && selectedSlotIds.length === 0) {
       showAlert(
@@ -573,7 +661,7 @@ export default function SportsDashboard() {
             {!isSelectedDateBooked ? (
               <>
                 {/* Booking Mode Selector */}
-                {selectedGround.id !== "ground-a" && (
+                {availableModes.length > 1 && (
                   <>
                     <View style={styles.sectionHeader}>
                       <View style={styles.headerWithIcon}>
@@ -698,57 +786,82 @@ export default function SportsDashboard() {
                           label: "12 Hours",
                           sub: "6 AM – 6 PM",
                           icon: "sunny",
+                          range: Array.from({ length: 12 }, (_, i) => String(i + 7)),
                         },
                         {
                           id: "24h",
                           label: "24 Hours",
                           sub: "Full Cycle",
                           icon: "moon",
+                          range: Array.from({ length: 24 }, (_, i) => String(i + 1)),
                         },
-                      ].map((tier) => (
-                        <TouchableOpacity
-                          key={tier.id}
-                          style={[
-                            styles.tierButton,
-                            fullDayType === tier.id && {
-                              backgroundColor: tintColor,
-                              borderColor: tintColor,
-                            },
-                          ]}
-                          onPress={() => {
-                            setFullDayType(tier.id as any);
-                            Haptics.impactAsync(
-                              Haptics.ImpactFeedbackStyle.Medium,
-                            );
-                          }}
-                        >
-                          <Ionicons
-                            name={tier.icon as any}
-                            size={14}
-                            color={fullDayType === tier.id ? "#fff" : tintColor}
-                          />
-                          <View>
-                            <ThemedText
-                              style={[
-                                styles.tierLabel,
-                                fullDayType === tier.id && { color: "#fff" },
-                              ]}
-                            >
-                              {tier.label}
-                            </ThemedText>
-                            <ThemedText
-                              style={[
-                                styles.tierSub,
-                                fullDayType === tier.id && {
-                                  color: "rgba(255,255,255,0.7)",
-                                },
-                              ]}
-                            >
-                              {tier.sub}
-                            </ThemedText>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
+                      ].map((tier) => {
+                        const isLocked = tier.range.some(slotId => {
+                          const isHeldLocally = heldSlots.some(
+                            (h: any) =>
+                              h.groundId === selectedGround.id &&
+                              h.slotId === slotId &&
+                              h.date === dateKey
+                          );
+                          const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
+                          const isBookedOrHeldApi = apiSlot && (apiSlot.is_booked || apiSlot.is_held);
+                          return isHeldLocally || isBookedOrHeldApi;
+                        });
+
+                        return (
+                          <TouchableOpacity
+                            key={tier.id}
+                            style={[
+                              styles.tierButton,
+                              fullDayType === tier.id && !isLocked && {
+                                backgroundColor: tintColor,
+                                borderColor: tintColor,
+                              },
+                              isLocked && {
+                                opacity: 0.6,
+                                backgroundColor: "rgba(128, 128, 128, 0.1)",
+                                borderColor: "transparent",
+                              }
+                            ]}
+                            disabled={isLocked}
+                            onPress={() => {
+                              if (isLocked) return;
+                              setFullDayType(tier.id as any);
+                              Haptics.impactAsync(
+                                Haptics.ImpactFeedbackStyle.Medium,
+                              );
+                            }}
+                          >
+                            <Ionicons
+                              name={isLocked ? "lock-closed" : tier.icon as any}
+                              size={14}
+                              color={isLocked ? "#EF4444" : fullDayType === tier.id ? "#fff" : tintColor}
+                            />
+                            <View>
+                              <ThemedText
+                                style={[
+                                  styles.tierLabel,
+                                  fullDayType === tier.id && !isLocked && { color: "#fff" },
+                                  isLocked && { color: "#EF4444", textDecorationLine: "line-through" }
+                                ]}
+                              >
+                                {tier.label}
+                              </ThemedText>
+                              <ThemedText
+                                style={[
+                                  styles.tierSub,
+                                  fullDayType === tier.id && !isLocked && {
+                                    color: "rgba(255,255,255,0.7)",
+                                  },
+                                  isLocked && { color: "#EF4444" }
+                                ]}
+                              >
+                                {isLocked ? "LOCKED BY ADMIN" : tier.sub}
+                              </ThemedText>
+                            </View>
+                          </TouchableOpacity>
+                        )
+                      })}
                     </View>
                   </View>
                 ) : (
@@ -756,47 +869,22 @@ export default function SportsDashboard() {
                     <View style={styles.sectionHeader}>
                       <View style={styles.headerWithIcon}>
                         <Ionicons name="time" size={18} color={tintColor} />
-                        <ThemedText type="subtitle">
-                          {pricing.isWeekend
-                            ? "Weekend Session Slots"
-                            : "Hourly Slots"}
-                        </ThemedText>
+                        <ThemedText type="subtitle">Hourly Slots</ThemedText>
                       </View>
-                      {pricing.isWeekend && (
-                        <View
-                          style={[
-                            styles.weekendTag,
-                            {
-                              backgroundColor: tintColor + "20",
-                              borderColor: tintColor,
-                              borderWidth: 1,
-                            },
-                          ]}
-                        >
-                          <ThemedText
-                            style={{
-                              color: tintColor,
-                              fontSize: 10,
-                              fontWeight: "900",
-                            }}
-                          >
-                            3 SESSIONS
-                          </ThemedText>
-                        </View>
-                      )}
                     </View>
 
-                    {(pricing.isWeekend
-                      ? ["Morning", "Afternoon", "Evening"]
-                      : ["Morning", "Afternoon", "Evening", "Night"]
-                    ).map((category) => {
-                      const slotsInCategory = getDynamicTimeSlots(
-                        selectedDate,
-                      ).filter((s) => s.category === category);
-                      if (slotsInCategory.length === 0) return null;
-                      return (
-                        <View key={category} style={styles.categoryContainer}>
-                          {!pricing.isWeekend && (
+                    {["Morning", "Afternoon", "Evening", "Night"].map(
+                      (category) => {
+                        const slotsInCategory = (
+                          apiTimeSlots.length > 0
+                            ? apiTimeSlots
+                            : getDynamicTimeSlots(selectedDate)
+                        ).filter(
+                          (s: any) => s.category === category && s.duration === 1
+                        );
+                        if (slotsInCategory.length === 0) return null;
+                        return (
+                          <View key={category} style={styles.categoryContainer}>
                             <View style={styles.categoryHeader}>
                               <Ionicons
                                 name={
@@ -815,37 +903,45 @@ export default function SportsDashboard() {
                                 {category}
                               </ThemedText>
                             </View>
-                          )}
-                          <View
-                            style={
-                              pricing.isWeekend
-                                ? styles.sessionsList
-                                : styles.slotsGrid
-                            }
-                          >
-                            {slotsInCategory.map((slot) => {
-                              const status =
-                                locks[`${selectedGround.id}-${slot.id}`]
-                                  ?.status || "available";
-                              return (
-                                <SportsSlot
-                                  key={slot.id}
-                                  id={slot.id}
-                                  label={slot.label}
-                                  status={status}
-                                  price={pricing.finalPrice}
-                                  onPress={selectSlot}
-                                  variant={
-                                    pricing.isWeekend ? "session" : "hourly"
-                                  }
-                                  duration={slot.duration}
-                                />
-                              );
-                            })}
+                            <View style={styles.slotsGrid}>
+                              {slotsInCategory.map((slot) => {
+                                const slotId = String(slot.slot_id || slot.id);
+                                let status =
+                                  locks[`${selectedGround.id}-${slotId}`]
+                                    ?.status || "available";
+
+                                const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
+                                if (apiSlot && apiSlot.is_booked) {
+                                  status = "booked";
+                                } else if (
+                                  (apiSlot && apiSlot.is_held) ||
+                                  heldSlots.some(
+                                    (h: any) =>
+                                      h.groundId === selectedGround.id &&
+                                      h.slotId === slotId &&
+                                      h.date === dateKey
+                                  )
+                                ) {
+                                  status = "locked";
+                                }
+
+                                return (
+                                  <SportsSlot
+                                    key={slotId}
+                                    id={slotId}
+                                    label={slot.label}
+                                    status={status}
+                                    price={pricing.finalPrice}
+                                    onPress={selectSlot}
+                                    variant="hourly"
+                                    duration={slot.duration}
+                                  />
+                                );
+                              })}
+                            </View>
                           </View>
-                        </View>
-                      );
-                    })}
+                        );
+                      })}
                   </View>
                 )}
               </>
@@ -938,11 +1034,11 @@ export default function SportsDashboard() {
               {bookingMode === "full"
                 ? pricing.finalPrice
                 : pricing.finalPrice *
-                  Object.keys(locks).filter(
-                    (k) =>
-                      k.startsWith(selectedGround.id) &&
-                      locks[k].status === "selected",
-                  ).length}
+                Object.keys(locks).filter(
+                  (k) =>
+                    k.startsWith(selectedGround.id) &&
+                    locks[k].status === "selected",
+                ).length}
             </ThemedText>
           </View>
           <TouchableOpacity

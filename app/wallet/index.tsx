@@ -4,7 +4,7 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 import { useAdminStore } from "@/store/admin-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -13,6 +13,7 @@ import {
   Dimensions,
   ImageBackground,
   RefreshControl,
+  Linking,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -33,18 +34,101 @@ export default function WalletScreen() {
   const [topUpAmount, setTopUpAmount] = useState(500);
   const [paymentMethod, setPaymentMethod] = useState<"gpay">("gpay");
   const [refreshing, setRefreshing] = useState(false);
+  const [apiWalletPoints, setApiWalletPoints] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>(TRANSACTIONS);
 
-  React.useEffect(() => {
+  const fetchApiWallet = async () => {
+    if (!user?.id) return;
+    setWalletLoading(true);
+    try {
+      const res = await fetch(
+        `https://api.codingboss.in/booking/wallet/?userId=${user.id}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setApiWalletPoints(data.wallet_points ?? 0);
+      }
+    } catch (e) {
+      console.warn("Wallet API fetch failed:", e);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(
+        `https://api.codingboss.in/booking/wallet-transactions/?userId=${user.id}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        // Fallback to TRANSACTIONS if API returns empty or unexpected format
+        const fetchedTxs = Array.isArray(data) ? data : data.transactions || [];
+        if (fetchedTxs.length > 0) {
+          setTransactions(fetchedTxs);
+        }
+      }
+    } catch (e) {
+      console.warn("Wallet transactions API fetch failed:", e);
+    }
+  };
+
+  useEffect(() => {
     fetchWallet();
-  }, []);
+    fetchApiWallet();
+    fetchTransactions();
+  }, [user?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchWallet();
+    await fetchApiWallet();
+    await fetchTransactions();
     setRefreshing(false);
   };
 
-  const handleTopUp = () => {
+  const handleTopUp = async () => {
+    if (paymentMethod === "gpay") {
+      // Mocking GPay intent
+      console.log("Processing GPay Top-Up");
+    }
+
+    if (user?.id) {
+      try {
+        await fetch(
+          "https://api.codingboss.in/booking/wallet-recharge/",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "ngrok-skip-browser-warning": "true",
+            },
+            body: JSON.stringify({
+              userId: user.id,
+              amount: topUpAmount,
+            }),
+          }
+        );
+        fetchApiWallet();
+      } catch (e) {
+        console.warn("Wallet recharge API failed:", e);
+      }
+    }
+
     topUpWallet(topUpAmount);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     showAlert(
@@ -84,20 +168,27 @@ export default function WalletScreen() {
         >
           <View style={styles.headerOverlay}>
             <View style={styles.balanceContainer}>
-              <ThemedText style={styles.balanceLabel}>TOTAL BALANCE</ThemedText>
-              <ThemedText style={styles.balanceValue}>
-                ₹{user?.walletBalance || 0}
-              </ThemedText>
-              <View style={styles.pointsBadge}>
-                <MaterialCommunityIcons
-                  name="star-circle"
-                  size={16}
-                  color="#F9A825"
-                />
-                <ThemedText style={styles.pointsText}>
-                  {user?.loyaltyPoints || 0} Points
+              <ThemedText style={styles.balanceLabel}>WALLET POINTS</ThemedText>
+              <View style={styles.pointsRow}>
+                <MaterialCommunityIcons name="star-circle" size={44} color="#F9A825" />
+                <ThemedText style={styles.balanceValue}>
+                  {walletLoading
+                    ? "..."
+                    : apiWalletPoints !== null
+                      ? apiWalletPoints
+                      : user?.loyaltyPoints || 0}
                 </ThemedText>
               </View>
+              <ThemedText style={styles.pointsSubLabel}>pts</ThemedText>
+              <ThemedText style={styles.pointsEquivLabel}>
+                ≈ ₹{((apiWalletPoints ?? user?.loyaltyPoints ?? 0) / 10).toFixed(0)} redeemable value
+              </ThemedText>
+              {apiWalletPoints !== null && (
+                <View style={styles.syncBadge}>
+                  <Ionicons name="cloud-done-outline" size={12} color="#34D399" />
+                  <ThemedText style={styles.syncText}>Synced with server</ThemedText>
+                </View>
+              )}
             </View>
           </View>
         </ImageBackground>
@@ -109,7 +200,7 @@ export default function WalletScreen() {
               Add Funds
             </ThemedText>
             <ThemedText style={styles.sectionSubtitle}>
-              Quick recharge for seamless bookings
+              Pay & earn points — ₹100 = 10 pts
             </ThemedText>
 
             <View style={styles.amountGrid}>
@@ -136,6 +227,14 @@ export default function WalletScreen() {
                     ]}
                   >
                     ₹{amount}
+                  </ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.pointsEarnText,
+                      topUpAmount === amount && { color: "rgba(255,255,255,0.85)" },
+                    ]}
+                  >
+                    +{amount / 10} pts
                   </ThemedText>
                 </TouchableOpacity>
               ))}
@@ -193,7 +292,7 @@ export default function WalletScreen() {
               onPress={handleTopUp}
             >
               <ThemedText style={styles.payButtonText}>
-                Add ₹{topUpAmount} Now
+                Pay ₹{topUpAmount} → Earn {topUpAmount / 10} pts
               </ThemedText>
               <Ionicons name="flash" size={18} color="#fff" />
             </TouchableOpacity>
@@ -223,29 +322,29 @@ export default function WalletScreen() {
             </TouchableOpacity>
           </View>
 
-          {TRANSACTIONS.map((tx) => (
+          {transactions.map((tx: any, index: number) => (
             <View
-              key={tx.id}
+              key={tx.id || index.toString()}
               style={[styles.txItem, { backgroundColor: cardBg }]}
             >
               <View
                 style={[
                   styles.txIcon,
                   {
-                    backgroundColor: tx.amount > 0 ? "#10B98115" : "#388E3C10",
+                    backgroundColor: tx.points > 0 ? "#F9A82515" : tx.points < 0 ? "#EF444415" : "#94A3B810",
                   },
                 ]}
               >
-                <Ionicons
+                <MaterialCommunityIcons
                   name={
-                    tx.amount > 0
-                      ? "arrow-down"
+                    tx.points > 0
+                      ? "star-plus"
                       : tx.type === "Redemption"
-                        ? "gift"
-                        : "card"
+                        ? "gift-outline"
+                        : "star-minus"
                   }
                   size={20}
-                  color={tx.amount > 0 ? "#10B981" : "#388E3C"}
+                  color={tx.points > 0 ? "#F9A825" : tx.points < 0 ? "#EF4444" : "#94A3B8"}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -255,17 +354,19 @@ export default function WalletScreen() {
               <View style={{ alignItems: "flex-end" }}>
                 <ThemedText
                   style={[
-                    styles.txAmount,
-                    tx.amount > 0 && { color: "#10B981" },
+                    styles.txPoints,
+                    { fontSize: 15 },
+                    tx.points > 0 && { color: "#F9A825" },
+                    tx.points < 0 && { color: "#EF4444" },
+                    tx.points === 0 && { color: "#94A3B8" },
                   ]}
                 >
-                  {tx.amount > 0 ? "+" : ""}
-                  {tx.amount === 0 ? "--" : `₹${Math.abs(tx.amount)}`}
+                  {tx.points > 0 ? "+" : ""}
+                  {tx.points === 0 ? "--" : `${tx.points} pts`}
                 </ThemedText>
-                {tx.points !== 0 && (
-                  <ThemedText style={styles.txPoints}>
-                    {tx.points > 0 ? "+" : ""}
-                    {tx.points} pts
+                {tx.amount !== 0 && (
+                  <ThemedText style={[styles.txDate, { fontSize: 11 }]}>
+                    ₹{Math.abs(tx.amount)} paid
                   </ThemedText>
                 )}
               </View>
@@ -280,6 +381,21 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
+  syncBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(52,211,153,0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  syncText: {
+    color: "#34D399",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   container: {
     flex: 1,
   },
@@ -306,13 +422,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  pointsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   balanceValue: {
     color: "#fff",
-    fontSize: 56,
+    fontSize: 64,
     fontWeight: "900",
-    lineHeight: 64,
+    lineHeight: 72,
+  },
+  pointsSubLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+  pointsEquivLabel: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  pointsEarnText: {
+    fontSize: 11,
+    color: "#F9A825",
+    fontWeight: "700",
+    marginTop: 2,
   },
   pointsBadge: {
     flexDirection: "row",

@@ -76,6 +76,9 @@ class AdminStore {
   private basePrice: number = 1200;
   private price12h: number = 6000;
   private price24h: number = 10000;
+  private weekendBasePrice: number = 1500;
+  private weekendPrice12h: number = 8000;
+  private weekendPrice24h: number = 13000;
   private walletBalance: number = 500;
   private loyaltyPoints: number = 0;
   private bookings: Booking[] = [];
@@ -94,7 +97,7 @@ class AdminStore {
   private isInitialized: boolean = false;
   private listeners: Set<() => void> = new Set();
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance() {
     if (!AdminStore.instance) {
@@ -127,6 +130,9 @@ class AdminStore {
         basePrice: this.basePrice,
         price12h: this.price12h,
         price24h: this.price24h,
+        weekendBasePrice: this.weekendBasePrice,
+        weekendPrice12h: this.weekendPrice12h,
+        weekendPrice24h: this.weekendPrice24h,
         heldSlots: this.heldSlots,
         couponCode: this.couponCode,
         couponPercentage: this.couponPercentage,
@@ -169,6 +175,9 @@ class AdminStore {
         this.basePrice = appData.basePrice ?? 1200;
         this.price12h = appData.price12h ?? 6000;
         this.price24h = appData.price24h ?? 10000;
+        this.weekendBasePrice = appData.weekendBasePrice ?? 1500;
+        this.weekendPrice12h = appData.weekendPrice12h ?? 8000;
+        this.weekendPrice24h = appData.weekendPrice24h ?? 13000;
         this.heldSlots = appData.heldSlots || [];
         this.couponCode = appData.couponCode ?? "SAVE20";
         this.couponPercentage = appData.couponPercentage ?? 20;
@@ -232,12 +241,13 @@ class AdminStore {
       const token = this.authToken;
 
       const response = await fetch(
-        `https://refined-alone-causing.ngrok-free.dev/booking/user/${userId}/`,
+        `https://api.codingboss.in/booking/user/${userId}/`,
         {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            "ngrok-skip-browser-warning": "true",
             ...(token ? { Authorization: `Token ${token}` } : {}),
           },
         },
@@ -306,10 +316,10 @@ class AdminStore {
       const booking = this.bookings[index];
       this.bookings[index] = { ...booking, status: "Cancelled" };
 
-      const refundAmount = booking.advancePaid * 0.5;
-      this.walletBalance += refundAmount;
+      const refundPoints = Math.floor(booking.advancePaid * 0.05);
+      this.loyaltyPoints += refundPoints;
       if (this.currentUser) {
-        this.currentUser.walletBalance = this.walletBalance;
+        this.currentUser.loyaltyPoints = this.loyaltyPoints;
       }
 
       this.computeAdminStats();
@@ -348,9 +358,12 @@ class AdminStore {
   }
 
   async updateAdminPricing(pricing: any) {
-    if (pricing.basePrice) this.basePrice = pricing.basePrice;
-    if (pricing.price12h) this.price12h = pricing.price12h;
-    if (pricing.price24h) this.price24h = pricing.price24h;
+    if (pricing.basePrice !== undefined) this.basePrice = pricing.basePrice;
+    if (pricing.price12h !== undefined) this.price12h = pricing.price12h;
+    if (pricing.price24h !== undefined) this.price24h = pricing.price24h;
+    if (pricing.weekendBasePrice !== undefined) this.weekendBasePrice = pricing.weekendBasePrice;
+    if (pricing.weekendPrice12h !== undefined) this.weekendPrice12h = pricing.weekendPrice12h;
+    if (pricing.weekendPrice24h !== undefined) this.weekendPrice24h = pricing.weekendPrice24h;
 
     this.saveSession();
     this.notify();
@@ -449,6 +462,28 @@ class AdminStore {
     this.notify();
   }
 
+  async toggleHoldApi(type: "ground" | "slot" | "timeslot", id: number, action: "hold" | "release", date: string, groundId?: number) {
+    try {
+      const payload: any = { type, id, action, date };
+      if (groundId) payload.groundId = groundId;
+
+      const response = await fetch("https://api.codingboss.in/booking/admin/toggle-hold/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        console.warn("Failed to toggle hold on backend", response.status);
+        this.showAlert("Action Failed", "Failed to update hold status on the server.", "error");
+      }
+    } catch (error) {
+      console.warn("Network error toggling hold", error);
+      this.showAlert("Network Error", "Could not reach the server to update hold status.", "error");
+    }
+  }
+
   isHeld(groundId: string, slotId: string, date: string) {
     return this.heldSlots.some(
       (h) => h.groundId === groundId && h.slotId === slotId && h.date === date,
@@ -485,6 +520,15 @@ class AdminStore {
     this.notify();
   }
 
+  getWeekendBasePrice() { return this.weekendBasePrice; }
+  setWeekendBasePrice(price: number) { this.weekendBasePrice = price; this.saveSession(); this.notify(); }
+
+  getWeekendPrice12h() { return this.weekendPrice12h; }
+  setWeekendPrice12h(price: number) { this.weekendPrice12h = price; this.saveSession(); this.notify(); }
+
+  getWeekendPrice24h() { return this.weekendPrice24h; }
+  setWeekendPrice24h(price: number) { this.weekendPrice24h = price; this.saveSession(); this.notify(); }
+
   getCouponPercentage() {
     return this.couponPercentage;
   }
@@ -520,9 +564,11 @@ class AdminStore {
   }
 
   // React Subscription
-  subscribe(listener: () => void) {
+  subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   private notify() {
@@ -542,6 +588,9 @@ export const useAdminStore = () => {
     basePrice: adminStore.getBasePrice(),
     price12h: adminStore.getPrice12h(),
     price24h: adminStore.getPrice24h(),
+    weekendBasePrice: adminStore.getWeekendBasePrice(),
+    weekendPrice12h: adminStore.getWeekendPrice12h(),
+    weekendPrice24h: adminStore.getWeekendPrice24h(),
     bookings: adminStore.getBookings(),
     grounds: adminStore.getGrounds(),
     adminStats: adminStore.getAdminStats(),
@@ -559,6 +608,9 @@ export const useAdminStore = () => {
         basePrice: adminStore.getBasePrice(),
         price12h: adminStore.getPrice12h(),
         price24h: adminStore.getPrice24h(),
+        weekendBasePrice: adminStore.getWeekendBasePrice(),
+        weekendPrice12h: adminStore.getWeekendPrice12h(),
+        weekendPrice24h: adminStore.getWeekendPrice24h(),
         bookings: adminStore.getBookings(),
         grounds: adminStore.getGrounds(),
         adminStats: adminStore.getAdminStats(),
@@ -590,6 +642,8 @@ export const useAdminStore = () => {
       adminStore.updateAdminPricing(pricing),
     toggleHold: (groundId: string, slotId: string, date: string) =>
       adminStore.toggleHold(groundId, slotId, date),
+    toggleHoldApi: (type: "ground" | "slot" | "timeslot", id: number, action: "hold" | "release", date: string, groundId?: number) =>
+      adminStore.toggleHoldApi(type, id, action, date, groundId),
     fetchWallet: () => adminStore.fetchWallet(),
     topUpWallet: (amount: number) => adminStore.topUpWallet(amount),
     payFromWallet: (amount: number) => adminStore.payFromWallet(amount),
@@ -601,6 +655,9 @@ export const useAdminStore = () => {
     setBasePrice: (p: number) => adminStore.setBasePrice(p),
     setPrice12h: (p: number) => adminStore.setPrice12h(p),
     setPrice24h: (p: number) => adminStore.setPrice24h(p),
+    setWeekendBasePrice: (p: number) => adminStore.setWeekendBasePrice(p),
+    setWeekendPrice12h: (p: number) => adminStore.setWeekendPrice12h(p),
+    setWeekendPrice24h: (p: number) => adminStore.setWeekendPrice24h(p),
     setCouponPercentage: (p: number) => adminStore.setCouponPercentage(p),
     setCouponCode: (c: string) => adminStore.setCouponCode(c),
     updateAdminCredentials: (id: string, pass: string) =>

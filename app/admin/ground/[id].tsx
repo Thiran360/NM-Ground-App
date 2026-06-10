@@ -16,7 +16,7 @@ import { TIME_SLOTS } from "@/utils/pricing";
 
 export default function AdminGroundManagement() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { toggleHold, heldSlots, user, bookings } = useAdminStore();
+  const { toggleHold, toggleHoldApi, heldSlots, user, bookings } = useAdminStore();
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const tintColor = useThemeColor({}, "tint");
@@ -82,6 +82,9 @@ export default function AdminGroundManagement() {
       );
       if (shouldHold !== isCurrentlyHeld) {
         toggleHold(id!, String(slotId), dateKey);
+        const mappedId = typeof slotId === 'number' ? slotId + 24 : parseInt(slotId as any) + 24;
+        const parsedGroundId = id === "ground-b" ? 2 : 1;
+        toggleHoldApi("timeslot", mappedId, shouldHold ? "hold" : "release", dateKey, parsedGroundId);
       }
     });
   };
@@ -351,6 +354,18 @@ export default function AdminGroundManagement() {
                         onPress={() => {
                           if (isBooked) return;
                           toggleHold(id!, slot.id, dateKey);
+                          let mappedId = parseInt(slot.id);
+                          // For standard numerical slots (1-24), map to 25-48.
+                          // For weekend slots (weekend-m, a, e), handle separately if needed, 
+                          // but the UI currently passes string numerical IDs for hourly slots.
+                          if (!isNaN(mappedId)) {
+                             mappedId += 24;
+                          } else if (slot.id === 'weekend-m') mappedId = 49;
+                          else if (slot.id === 'weekend-a') mappedId = 50;
+                          else if (slot.id === 'weekend-e') mappedId = 51;
+                          
+                          const parsedGroundId = id === "ground-b" ? 2 : 1;
+                          toggleHoldApi("timeslot", mappedId, !isHeld ? "hold" : "release", dateKey, parsedGroundId);
                         }}
                         disabled={isBooked}
                       >

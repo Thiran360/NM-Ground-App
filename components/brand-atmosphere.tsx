@@ -1,125 +1,20 @@
 import React, { useEffect } from "react";
 import { StyleSheet, View, Dimensions, Platform } from "react-native";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withTiming,
-  withSequence,
-  Easing,
-  interpolate,
-} from "react-native-reanimated";
+
 import { LinearGradient } from "expo-linear-gradient";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 const { width, height } = Dimensions.get("window");
 
 const Glitter = ({ index }: { index: number }) => {
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.5);
   const x = Math.random() * width;
   const y = Math.random() * height;
-
-  useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(Math.random() * 0.5, {
-          duration: 2000 + Math.random() * 3000,
-        }),
-        withTiming(0, { duration: 2000 + Math.random() * 3000 }),
-      ),
-      -1,
-      true,
-    );
-    scale.value = withRepeat(
-      withTiming(1, { duration: 1500 + Math.random() * 2000 }),
-      -1,
-      true,
-    );
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }],
-    left: x,
-    top: y,
-  }));
-
-  return <Animated.View style={[styles.glitter, animatedStyle]} />;
+  return <View style={[styles.glitter, { opacity: 0.8, left: x, top: y }]} />;
 };
 
 const Orb = ({ color, size, duration, delay, startX, startY }: any) => {
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(0.1);
-
-  useEffect(() => {
-    tx.value = withRepeat(
-      withSequence(
-        withTiming(width * 0.3, {
-          duration,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        withTiming(-width * 0.2, {
-          duration,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        withTiming(0, { duration, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      true,
-    );
-
-    ty.value = withRepeat(
-      withSequence(
-        withTiming(height * 0.15, {
-          duration: duration * 1.5,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        withTiming(-height * 0.1, {
-          duration: duration * 1.5,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        withTiming(0, {
-          duration: duration * 1.5,
-          easing: Easing.inOut(Easing.ease),
-        }),
-      ),
-      -1,
-      true,
-    );
-
-    scale.value = withRepeat(
-      withTiming(1.5, {
-        duration: duration * 0.8,
-        easing: Easing.inOut(Easing.ease),
-      }),
-      -1,
-      true,
-    );
-
-    opacity.value = withRepeat(
-      withTiming(0.3, {
-        duration: duration * 0.7,
-        easing: Easing.inOut(Easing.ease),
-      }),
-      -1,
-      true,
-    );
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: tx.value },
-      { translateY: ty.value },
-      { scale: scale.value },
-    ],
-    opacity: opacity.value,
-  }));
-
   return (
-    <Animated.View
+    <View
       style={[
         styles.orb,
         {
@@ -129,8 +24,8 @@ const Orb = ({ color, size, duration, delay, startX, startY }: any) => {
           backgroundColor: color,
           left: startX,
           top: startY,
-        },
-        animatedStyle,
+          opacity: 0.15,
+        }
       ]}
     />
   );

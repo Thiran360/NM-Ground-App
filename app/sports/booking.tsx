@@ -5,7 +5,7 @@ import { TIME_SLOTS, getSlotPrice, getDynamicTimeSlots } from "@/utils/pricing";
 import { useAdminStore } from "@/store/admin-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -13,6 +13,8 @@ import {
   TouchableOpacity,
   View,
   TextInput,
+  Linking,
+  Alert,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -41,6 +43,9 @@ export default function BookingConfirmation() {
     basePrice,
     price12h,
     price24h,
+    weekendBasePrice,
+    weekendPrice12h,
+    weekendPrice24h,
     payFromWallet,
     awardPoints,
     redeemPoints,
@@ -48,6 +53,7 @@ export default function BookingConfirmation() {
     couponPercentage,
     couponCode: activeCouponCode,
     showAlert,
+    bookings,
   } = useAdminStore();
   const [selectedMethod, setSelectedMethod] = useState<"gpay" | "wallet">(
     "wallet",
@@ -56,6 +62,32 @@ export default function BookingConfirmation() {
   const [couponCode, setCouponCode] = useState("");
   const [isCouponApplied, setIsCouponApplied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [apiWalletPoints, setApiWalletPoints] = useState<number | null>(null);
+  const [paymentType, setPaymentType] = useState<"advance" | "full">("advance");
+
+  useEffect(() => {
+    const fetchApiWallet = async () => {
+      if (!user?.id) return;
+      try {
+        const res = await fetch(
+          `https://api.codingboss.in/booking/wallet/?userId=${user.id}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "ngrok-skip-browser-warning": "true",
+            },
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setApiWalletPoints(data.wallet_points ?? 0);
+        }
+      } catch (e) {
+        console.warn("Wallet API fetch failed:", e);
+      }
+    };
+    fetchApiWallet();
+  }, [user?.id]);
 
   const selectedSlotIds = slots?.split(",") || [];
   const bookingDate = new Date(date);
@@ -65,8 +97,11 @@ export default function BookingConfirmation() {
         hourly: basePrice,
         price12h,
         price24h,
+        weekendHourly: weekendBasePrice,
+        weekendPrice12h,
+        weekendPrice24h,
       }),
-    [bookingDate, isFullDay, fullDayType, basePrice, price12h, price24h],
+    [bookingDate, isFullDay, fullDayType, basePrice, price12h, price24h, weekendBasePrice, weekendPrice12h, weekendPrice24h],
   );
 
   const totalAmount = isFullDay
@@ -90,12 +125,34 @@ export default function BookingConfirmation() {
     0,
     Math.floor(totalAmount / 2) + 1 - redemptionValue - couponDiscount,
   );
-  const balanceAmount = totalAmount - Math.floor(totalAmount / 2) + 1;
+  const fullAmount = Math.max(
+    0,
+    totalAmount - redemptionValue - couponDiscount,
+  );
+  const amountToPay = paymentType === "full" ? fullAmount : advanceAmount;
+  const balanceAmount = paymentType === "full" ? 0 : totalAmount - Math.floor(totalAmount / 2) + 1;
 
   const processFinalBooking = async () => {
     try {
+      try {
+        await fetch("https://api.codingboss.in/booking/payment-success/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: user?.id ? parseInt(user.id.toString(), 10) : 5,
+            groundId: parseInt(groundId?.replace(/\D/g, '') || "1", 10),
+            date: date || new Date().toISOString().split("T")[0],
+            amount: amountToPay,
+          }),
+        });
+      } catch (err) {
+        console.error("Payment success fetch error:", err);
+      }
+
       if (selectedMethod === "wallet") {
-        payFromWallet(advanceAmount);
+        payFromWallet(amountToPay);
       }
 
       if (shouldRedeem) {
@@ -107,7 +164,7 @@ export default function BookingConfirmation() {
 
       // Save Booking to API
       const success = await addBooking({
-        id: `bk-${Math.random().toString(36).substr(2, 9)}`,
+        id: String((bookings?.length || 0) + 1),
         groundId: groundId || "1",
         ground: groundId || "1",
         ground_id: groundId || "1",
@@ -118,7 +175,7 @@ export default function BookingConfirmation() {
         isFullDay,
         fullDayType: isFullDay ? fullDayType : undefined,
         totalAmount,
-        advancePaid: advanceAmount,
+        advancePaid: amountToPay,
         status: "Confirmed",
       });
 
@@ -151,10 +208,12 @@ export default function BookingConfirmation() {
 
   const handleConfirm = async () => {
     if (selectedMethod === "wallet" && user) {
-      if (user.walletBalance < advanceAmount) {
+      const currentPoints = apiWalletPoints !== null ? apiWalletPoints : (user.loyaltyPoints || 0);
+      const pointsRequired = Math.floor(amountToPay / 10);
+      if (currentPoints < pointsRequired) {
         showAlert(
-          "Insufficient Balance",
-          "Please top up your wallet to complete the booking.",
+          "Insufficient Points",
+          `You need ${pointsRequired} points to complete this booking. You have ${currentPoints}.`,
           "warning",
         );
         return;
@@ -165,19 +224,79 @@ export default function BookingConfirmation() {
     try {
       showAlert(
         "Processing Payment",
-        `Securely processing ₹${advanceAmount} via ${selectedMethod === "wallet" ? "NM Greens Wallet" : selectedMethod.toUpperCase()}...`,
+        `Securely processing ₹${amountToPay} via ${selectedMethod === "wallet" ? "NM Greens Wallet" : selectedMethod.toUpperCase()}...`,
         "info",
       );
 
       // Simulate payment processing time
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      if (selectedMethod === "gpay") {
-        await processFinalBooking();
-        return;
+      // Fetch the endpoint provided
+      try {
+        let finalSlotType = "hourly";
+        let finalSlots = slots || "";
+        let finalIsFullDay = "false";
+        let finalFullDayType = undefined;
+
+        if (isFullDay) {
+          if (fullDayType === "12h") {
+            finalSlotType = "12hr";
+            finalSlots = "12hr";
+            finalIsFullDay = "false";
+          } else if (fullDayType === "24h") {
+            finalSlotType = "24hr";
+            finalSlots = "24hr";
+            finalIsFullDay = "false";
+          } else {
+            finalSlotType = "full_day";
+            finalSlots = "full_day";
+            finalIsFullDay = "true";
+            finalFullDayType = "full_day";
+          }
+        }
+
+        const parsedUserId = user?.id ? parseInt(String(user.id).replace(/\D/g, ''), 10) : 1;
+
+        const payload: any = {
+          userId: isNaN(parsedUserId) ? 1 : parsedUserId,
+          groundId: String(groundId).includes("b") ? 2 : 1,
+          date: date || new Date().toISOString().split("T")[0],
+          slotType: finalSlotType,
+          slots: finalSlots,
+          isFullDay: finalIsFullDay,
+          walletPoints: shouldRedeem ? maxRedeemablePoints : 0
+        };
+        if (finalFullDayType) payload.fullDayType = finalFullDayType;
+
+        const response = await fetch("https://api.codingboss.in/booking/booking-create/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+            ...(user?.accessToken ? { Authorization: `Token ${user.accessToken}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+        console.log("Booking Create Status:", response.status);
+        if (!response.ok) {
+          console.error("Booking Create Failed Body:", await response.text());
+        }
+      } catch (err) {
+        console.error("Endpoint fetch error:", err);
       }
 
-      await processFinalBooking();
+      if (selectedMethod === "gpay") {
+        // Mocking GPay success without actual UPI intent
+        Alert.alert(
+          "Payment Processing",
+          "Processing your GPay payment...",
+          [
+            { text: "OK", onPress: () => processFinalBooking() }
+          ]
+        );
+      } else {
+        await processFinalBooking();
+      }
     } catch (error: any) {
       console.error("Processing Error:", error);
       showAlert("Error", `An unexpected error occurred.`, "error");
@@ -312,19 +431,21 @@ export default function BookingConfirmation() {
 
           <View style={styles.priceRow}>
             <ThemedText type="defaultSemiBold" style={{ color: tintColor }}>
-              Pay Now (Advance)
+              Pay Now ({paymentType === "full" ? "Full" : "Advance"})
             </ThemedText>
             <ThemedText type="defaultSemiBold" style={{ color: tintColor }}>
-              ₹{advanceAmount}
+              ₹{amountToPay}
             </ThemedText>
           </View>
 
-          <View style={styles.priceRow}>
-            <ThemedText style={styles.label}>
-              Balance to pay at ground
-            </ThemedText>
-            <ThemedText style={styles.label}>₹{balanceAmount}</ThemedText>
-          </View>
+          {paymentType === "advance" && (
+            <View style={styles.priceRow}>
+              <ThemedText style={styles.label}>
+                Balance to pay at ground
+              </ThemedText>
+              <ThemedText style={styles.label}>₹{balanceAmount}</ThemedText>
+            </View>
+          )}
         </View>
 
         {/* Coupon Code Section */}
@@ -411,51 +532,57 @@ export default function BookingConfirmation() {
           )}
         </View>
 
-        {/* Loyalty Points Redemption Card */}
-        {user && user.loyaltyPoints > 0 && (
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: cardBg,
-                borderColor: "#F9A825",
-                borderWidth: shouldRedeem ? 2 : 1,
-              },
-            ]}
-          >
-            <View style={styles.redemptionHeader}>
-              <View style={styles.pointsInfo}>
-                <MaterialCommunityIcons
-                  name="star-circle"
-                  size={24}
-                  color="#F9A825"
-                />
-                <View>
-                  <ThemedText type="defaultSemiBold">Loyalty Points</ThemedText>
-                  <ThemedText style={styles.label}>
-                    You have {user.loyaltyPoints} points
+
+
+        <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            Payment Option
+          </ThemedText>
+          <View style={styles.paymentGrid}>
+            {[
+              { id: "advance", label: "Advance Payment", amount: advanceAmount }
+            ].map(option => (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.paymentOption,
+                  paymentType === option.id && {
+                    borderColor: tintColor,
+                    backgroundColor: tintColor + "10",
+                  },
+                ]}
+                onPress={() => setPaymentType(option.id as "full" | "advance")}
+              >
+                <View style={{ flex: 1 }}>
+                  <ThemedText
+                    style={[
+                      styles.paymentLabel,
+                      paymentType === option.id && {
+                        color: tintColor,
+                        fontWeight: "900",
+                      },
+                    ]}
+                  >
+                    {option.label}
+                  </ThemedText>
+                  <ThemedText style={styles.paymentSubtitle}>
+                    Pay ₹{option.amount} now
                   </ThemedText>
                 </View>
-              </View>
-              <Switch
-                value={shouldRedeem}
-                onValueChange={(v) => {
-                  setShouldRedeem(v);
-                  Haptics.selectionAsync();
-                }}
-                trackColor={{ true: "#F9A825" }}
-              />
-            </View>
-            {shouldRedeem && (
-              <View style={styles.redemptionDetail}>
-                <ThemedText style={styles.redemptionText}>
-                  Redeeming {maxRedeemablePoints} points for ₹{redemptionValue}{" "}
-                  discount
-                </ThemedText>
-              </View>
-            )}
+                {paymentType === option.id && (
+                  <View
+                    style={[
+                      styles.checkCircle,
+                      { backgroundColor: tintColor },
+                    ]}
+                  >
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
-        )}
+        </View>
 
         <View style={[styles.card, { backgroundColor: cardBg }]}>
           <ThemedText type="subtitle" style={styles.cardTitle}>
@@ -466,7 +593,7 @@ export default function BookingConfirmation() {
             {[
               {
                 id: "wallet",
-                label: `NM Greens Wallet (₹${user?.walletBalance || 0})`,
+                label: `NM Greens Wallet (${apiWalletPoints !== null ? apiWalletPoints : user?.loyaltyPoints || 0} pts)`,
                 icon: "wallet",
                 color: tintColor,
               },
@@ -476,7 +603,7 @@ export default function BookingConfirmation() {
                 icon: "logo-google",
                 color: "#388E3C",
               },
-            ].map((method) => (
+            ].map((method: { id: string; label: string; icon: string; color: string; subtitle?: string }) => (
               <TouchableOpacity
                 key={method.id}
                 style={[
@@ -556,7 +683,7 @@ export default function BookingConfirmation() {
           disabled={isProcessing}
         >
           <ThemedText style={styles.confirmButtonText}>
-            {isProcessing ? "Processing..." : `Pay ₹${advanceAmount} Advance`}
+            {isProcessing ? "Processing..." : `Pay ₹${amountToPay}`}
           </ThemedText>
         </TouchableOpacity>
       </View>

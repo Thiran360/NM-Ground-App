@@ -13,23 +13,101 @@ import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { Ionicons } from "@expo/vector-icons";
 import { TIME_SLOTS, getDynamicTimeSlots } from "@/utils/pricing";
-import Animated, { FadeInUp } from "react-native-reanimated";
+import { formatBookingId } from "@/utils/booking-utils";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function BookingsScreen() {
-  const { bookings, showAlert, cancelBooking, fetchBookings } = useAdminStore();
+  const { bookings: localBookings, showAlert, cancelBooking, user, grounds } = useAdminStore();
+  const [apiBookings, setApiBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<"Confirmed" | "Completed" | "Cancelled">("Confirmed");
   const cardBg = useThemeColor({}, "cardBackground");
   const tintColor = useThemeColor({}, "tint");
 
+  const fetchMyBookings = async () => {
+    try {
+      // WORKAROUND: The my-bookings endpoint is currently throwing a 500 server error
+      // due to a missing Player query. We bypass this by fetching the admin bookings
+      // list and filtering it locally for the current user.
+      const response = await fetch("https://api.codingboss.in/booking/admin/bookings/", {
+        headers: {
+          "ngrok-skip-browser-warning": "true",
+          "Content-Type": "application/json",
+          ...(user?.accessToken ? { Authorization: `Token ${user.accessToken}` } : {}),
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const bookingsArray = Array.isArray(data.bookings) ? data.bookings : (Array.isArray(data) ? data : []);
+        const mappedBookings = bookingsArray.map((b: any) => {
+          let status = "Confirmed";
+          if (b.bookingStatus) {
+            const s = b.bookingStatus.toLowerCase();
+            if (s === "pending") status = "Confirmed";
+            else if (s === "completed") status = "Completed";
+            else if (s === "cancelled") status = "Cancelled";
+            else status = "Confirmed";
+          }
+
+          return {
+            ...b,
+            id: String(b.bookingId || b.id || "0"),
+            groundId: String(b.groundId || b.ground_id || "1"),
+            groundName: b.groundName,
+            date: b.bookingDate || b.date || new Date().toISOString(),
+            status: status,
+            isFullDay: b.slotType === "full_day" || b.is_full_day === "true" || b.isFullDay === true,
+            totalAmount: b.totalAmount || b.total_amount || 0,
+            advancePaid: b.onlinePaid || b.advancePaid || b.advance_paid || 0,
+            cashPending: b.cashPending || 0,
+            slots: Array.isArray(b.slots) ? b.slots : (typeof b.slots === 'string' ? b.slots.split(',') : []),
+          };
+        });
+
+        // Filter locally for the current user's bookings
+        const myFilteredBookings = mappedBookings.filter((b: any) =>
+          String(b.customerId) === String(user?.id) ||
+          String(b.customerName).toLowerCase() === String(user?.id).toLowerCase() ||
+          String(b.customerName).toLowerCase() === String(user?.name).toLowerCase()
+        );
+
+        setApiBookings(myFilteredBookings);
+      } else {
+        console.warn("My bookings fetch failed. Status:", response.status);
+        setApiBookings(localBookings.filter((b: any) => String(b.user) === String(user?.id) || String(b.player) === String(user?.id)));
+      }
+    } catch (e) {
+      console.warn("Failed to fetch my bookings", e);
+      setApiBookings(localBookings.filter((b: any) => String(b.user) === String(user?.id) || String(b.player) === String(user?.id)));
+    }
+  };
+
   useEffect(() => {
-    fetchBookings();
-  }, []);
+    fetchMyBookings();
+  }, [user?.accessToken]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchBookings();
+    await fetchMyBookings();
     setRefreshing(false);
+  };
+
+  const handleCancel = async (bookingId: string) => {
+    try {
+      await fetch("https://api.codingboss.in/booking/cancel-booking/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          bookingId: parseInt(bookingId.toString().replace(/\D/g, "") || "0", 10),
+        }),
+      });
+    } catch (err) {
+      console.warn("Cancel API failed:", err);
+    }
+    cancelBooking(bookingId);
   };
 
   const formatSlotLabels = (slotIds: any, bookingDate: Date) => {
@@ -80,27 +158,35 @@ export default function BookingsScreen() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
 
-  const sortedBookings = [...bookings].sort(
+  const userBookings = apiBookings;
+
+  const sortedBookings = [...userBookings].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
 
-  const upcomingBookings = sortedBookings.filter(
-    (b) => new Date(b.date) >= now && b.status !== "Cancelled",
-  );
-  const pastBookings = sortedBookings
-    .filter((b) => new Date(b.date) < now || b.status === "Cancelled")
-    .reverse();
+  const filteredBookings = sortedBookings.filter((b) => {
+    if (activeTab === "Confirmed") {
+      return b.status === "Confirmed";
+    }
+    if (activeTab === "Completed") {
+      return b.status === "Completed";
+    }
+    if (activeTab === "Cancelled") {
+      return b.status === "Cancelled";
+    }
+    return true;
+  });
+
+  // Reverse so recent is at top
+  const displayBookings = [...filteredBookings].reverse();
 
   const renderBookingCard = (booking: any, index: number) => {
     const bookingDate = new Date(booking.date);
     const isPartiallyPaid = booking.advancePaid < booking.totalAmount;
-    const isPast = bookingDate < now || booking.status === "Cancelled";
+    const isPast = bookingDate < now || booking.status === "Cancelled" || booking.status === "Completed";
 
     return (
-      <Animated.View
-        entering={FadeInUp.delay(index * 100)
-          .springify()
-          .damping(14)}
+      <View
         key={booking.id}
         style={[
           styles.card,
@@ -119,12 +205,12 @@ export default function BookingsScreen() {
         <View style={styles.cardHeader}>
           <View style={styles.headerTitleWrap}>
             <ThemedText style={styles.bookingId}>
-              ID: {String(booking.id || "N/A").toUpperCase()}
+              ID: {formatBookingId(booking.id)}
             </ThemedText>
             <ThemedText style={styles.groundName}>
-              {booking.groundId ||
-                booking.ground_name ||
-                booking.ground ||
+              {booking.groundName ||
+                grounds?.find((g) => g.id === String(booking.groundId))?.name ||
+                booking.groundId ||
                 "Unknown Ground"}
             </ThemedText>
           </View>
@@ -165,11 +251,11 @@ export default function BookingsScreen() {
               {isNaN(bookingDate.getTime())
                 ? "Date TBD"
                 : bookingDate.toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
             </ThemedText>
           </View>
 
@@ -186,9 +272,9 @@ export default function BookingsScreen() {
               {booking.isFullDay
                 ? `FULL DAY - ${String(booking.fullDayType || "Standard").toUpperCase()}`
                 : formatSlotLabels(
-                    booking.slots || booking.time_slots,
-                    bookingDate,
-                  )}
+                  booking.slots || booking.time_slots,
+                  bookingDate,
+                )}
             </ThemedText>
           </View>
 
@@ -225,36 +311,26 @@ export default function BookingsScreen() {
 
         {!isPast && (
           <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity
-              style={[styles.actionButton, { borderColor: tintColor }]}
-              onPress={() => handleAction("Directions")}
-            >
-              <Ionicons name="navigate-outline" size={16} color={tintColor} />
-              <ThemedText
-                style={[styles.actionButtonText, { color: tintColor }]}
+            {booking.status === "Confirmed" && (
+              <TouchableOpacity
+                style={[styles.actionButton, { borderColor: "#10B981" }]}
+                onPress={() => {
+                  Alert.alert("Complete Booking", "Booking marked as completed.");
+                  // Add complete logic here when backend is ready
+                }}
               >
-                Directions
-              </ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                { borderColor: "rgba(255,255,255,0.2)" },
-              ]}
-              onPress={() => handleAction("Support")}
-            >
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={16}
-                color="#FFFFFF"
-              />
-              <ThemedText
-                style={[styles.actionButtonText, { color: "#FFFFFF" }]}
-              >
-                Support
-              </ThemedText>
-            </TouchableOpacity>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={16}
+                  color="#10B981"
+                />
+                <ThemedText
+                  style={[styles.actionButtonText, { color: "#10B981" }]}
+                >
+                  Complete
+                </ThemedText>
+              </TouchableOpacity>
+            )}
 
             {booking.status === "Confirmed" && (
               <TouchableOpacity
@@ -262,12 +338,12 @@ export default function BookingsScreen() {
                 onPress={() => {
                   Alert.alert(
                     "Cancel Booking?",
-                    `Are you sure you want to cancel? As per policy, you will receive a 50% refund (₹${(booking.advancePaid * 0.5).toFixed(2)}) to your NM Greens Wallet.`,
+                    `Are you sure you want to cancel? As per policy, you will receive a refund of ${Math.floor(booking.advancePaid * 0.05)} pts to your NM Greens Wallet.`,
                     [
                       { text: "Keep Booking", style: "cancel" },
                       {
                         text: "Yes, Cancel",
-                        onPress: () => cancelBooking(booking.id),
+                        onPress: () => handleCancel(booking.id),
                         style: "destructive",
                       },
                     ],
@@ -288,7 +364,7 @@ export default function BookingsScreen() {
             )}
           </View>
         )}
-      </Animated.View>
+      </View>
     );
   };
 
@@ -298,6 +374,28 @@ export default function BookingsScreen() {
         <ThemedText type="title" style={styles.title}>
           My Bookings
         </ThemedText>
+      </View>
+
+      <View style={styles.tabsContainer}>
+        {(["Confirmed", "Completed", "Cancelled"] as const).map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[
+              styles.tabButton,
+              activeTab === tab && { backgroundColor: tintColor, borderColor: tintColor },
+            ]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <ThemedText
+              style={[
+                styles.tabText,
+                activeTab === tab && { color: "#fff" },
+              ]}
+            >
+              {tab}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ScrollView
@@ -310,9 +408,8 @@ export default function BookingsScreen() {
           />
         }
       >
-        {bookings.length === 0 ? (
-          <Animated.View
-            entering={FadeInUp.delay(200)}
+        {apiBookings.length === 0 ? (
+          <View
             style={styles.emptyContainer}
           >
             <Ionicons
@@ -324,27 +421,22 @@ export default function BookingsScreen() {
             <ThemedText style={styles.emptySubText}>
               Book a ground to see your history here.
             </ThemedText>
-          </Animated.View>
+          </View>
+        ) : displayBookings.length === 0 ? (
+          <View
+            style={styles.emptyContainer}
+          >
+            <Ionicons
+              name="search-outline"
+              size={64}
+              color="rgba(255,255,255,0.4)"
+            />
+            <ThemedText style={styles.emptyText}>No {activeTab.toLowerCase()} bookings.</ThemedText>
+          </View>
         ) : (
-          <View>
-            {upcomingBookings.length > 0 && (
-              <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>UPCOMING</ThemedText>
-                {upcomingBookings.map((booking, index) =>
-                  renderBookingCard(booking, index),
-                )}
-              </View>
-            )}
-
-            {pastBookings.length > 0 && (
-              <View style={[styles.section, { marginTop: 20 }]}>
-                <ThemedText style={styles.sectionTitle}>
-                  PAST & CANCELLED
-                </ThemedText>
-                {pastBookings.map((booking, index) =>
-                  renderBookingCard(booking, index),
-                )}
-              </View>
+          <View style={styles.section}>
+            {displayBookings.map((booking, index) =>
+              renderBookingCard(booking, index),
             )}
           </View>
         )}
@@ -431,7 +523,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusText: {
-    fontSize: 13,    
+    fontSize: 13,
     fontWeight: "900",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -508,5 +600,26 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 16,
     paddingLeft: 4,
+  },
+  tabsContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    marginBottom: 10,
+    gap: 8,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "transparent",
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#D1D5DB",
   },
 });

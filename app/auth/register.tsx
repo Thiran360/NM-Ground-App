@@ -4,13 +4,14 @@ import {
   TouchableOpacity,
   TextInput,
   View,
-   KeyboardAvoidingView,    
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   Image,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
@@ -72,65 +73,72 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(
-        "https://refined-alone-causing.ngrok-free.dev/booking/signup/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            full_name: name,
-            email: email,
-            phone_number: phone,
-            password: password,
-            confirm_password: confirmPassword,
-          }),
+      const userEmail = email.trim().toLowerCase();
+
+      const response = await fetch("https://api.codingboss.in/booking/signup/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          full_name: name.trim(),
+          email: userEmail,
+          username: userEmail,
+          phone_number: phone.trim(),
+          password: password,
+          confirm_password: confirmPassword,
+          role: "customer",
+        }),
+      });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // Persist auth token and user info for session
-        const token = data.token ?? data.access ?? data.key ?? "";
-        const userId =
-          data.user?.id ?? data.id ?? "user-" + Math.random().toString(36).substr(2, 9);
-        const rawFullName = data.user?.full_name ?? data.full_name ?? name ?? "";
-        const fullName = rawFullName || (email.includes("@") ? email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : name);
-
-        if (token) {
-          await AsyncStorage.setItem("auth_token", token);
+      if (!response.ok) {
+        let errorData: any = {};
+        let errorText = "";
+        try {
+          const text = await response.text();
+          errorText = text;
+          errorData = JSON.parse(text);
+        } catch (e) {
+          errorData = { rawText: errorText };
         }
-        await AsyncStorage.setItem(
-          "nm_user",
-          JSON.stringify({ ...data.user, id: userId, full_name: fullName }),
-        );
 
-        login("user", fullName, token || "local-token", userId);
+        console.error("Backend Error Data:", errorData);
+
+        let errorMessage = "Could not create account. Please try again.";
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+        else if (errorData.detail) errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        else if (Object.keys(errorData).length > 0) errorMessage = JSON.stringify(errorData);
+
         showAlert(
-          "Welcome Aboard!",
-          "Your account has been created successfully. You can now start booking.",
-          "success",
+          "Registration Failed",
+          errorMessage,
+          "error"
         );
-        router.replace("/(tabs)");
-      } else {
-        // Surface server validation errors
-        const message =
-          data?.detail ??
-          data?.email?.[0] ??
-          data?.phone_number?.[0] ??
-          data?.password?.[0] ??
-          data?.non_field_errors?.[0] ??
-          "Registration failed. Please try again.";
-        showAlert("Registration Failed", message, "error");
+        return;
       }
+
+      // Save user locally for offline mode fallback
+      const newUser = {
+        name: name.trim(),
+        email: userEmail,
+        phone: phone.trim(),
+        password: password,
+      };
+
+      await AsyncStorage.setItem("local_user_" + userEmail, JSON.stringify(newUser));
+
+      showAlert(
+        "Account Created!",
+        "Your account has been created successfully. Please login to continue.",
+        "success",
+      );
+      router.replace("/auth/login");
     } catch (error: any) {
       console.error("Registration Error:", error);
       showAlert(
-        "Network Error",
-        "Could not connect to the server. Please check your connection.",
+        "Error",
+        "Could not register locally. Please try again.",
         "error",
       );
     } finally {
@@ -139,180 +147,182 @@ export default function RegisterScreen() {
   };
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: pageBg }]}>
-      <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: pageBg }}>
+      <ThemedView style={[styles.container, { backgroundColor: "transparent" }]}>
+        <Stack.Screen options={{ headerShown: false }} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.flex}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.flex}
         >
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
           >
-            <Ionicons name="arrow-back" size={24} color={tintColor} />
-          </TouchableOpacity>
-
-          <View style={styles.header}>
-            <View
-              style={[
-                styles.logoContainer,
-                { backgroundColor: "rgba(0,0,0,0.5)", shadowColor: tintColor },
-              ]}
-            >
-              <Image
-                source={require("../../assets/images/nm_greens_new_logo.png")}
-                style={{ width: 85, height: 85 }}
-                resizeMode="contain"
-              />
-            </View>
-            <ThemedText type="title" style={styles.title}>
-              Join NM Greens
-            </ThemedText>
-            <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-              Create your player account to start booking
-            </ThemedText>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="person-outline"
-                size={20}
-                color={mutedColor}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
-                ]}
-                placeholder="Full Name"
-                placeholderTextColor={mutedColor}
-                value={name}
-                onChangeText={setName}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="mail-outline"
-                size={20}
-                color={mutedColor}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
-                ]}
-                placeholder="Email Address"
-                placeholderTextColor={mutedColor}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="call-outline"
-                size={20}
-                color={mutedColor}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
-                ]}
-                placeholder="Phone Number"
-                placeholderTextColor={mutedColor}
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color={mutedColor}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
-                ]}
-                placeholder="Password"
-                placeholderTextColor={mutedColor}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-              >
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color={mutedColor}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={20}
-                color={mutedColor}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
-                ]}
-                placeholder="Confirm Password"
-                placeholderTextColor={mutedColor}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showPassword}
-              />
-            </View>
-
             <TouchableOpacity
-              style={[styles.registerButton, { backgroundColor: tintColor }]}
-              onPress={handleRegister}
-              disabled={isLoading}
+              style={styles.backButton}
+              onPress={() => router.back()}
             >
-              <ThemedText style={styles.buttonText}>
-                {isLoading ? "Creating Account..." : "Sign Up"}
-              </ThemedText>
+              <Ionicons name="arrow-back" size={24} color={tintColor} />
             </TouchableOpacity>
 
-            <View style={styles.footer}>
-              <ThemedText style={[styles.footerText, { color: mutedColor }]}>
-                Already have an account?{" "}
+            <View style={styles.header}>
+              <View
+                style={[
+                  styles.logoContainer,
+                  { backgroundColor: "rgba(0,0,0,0.5)", shadowColor: tintColor },
+                ]}
+              >
+                <Image
+                  source={require("../../assets/images/nm_greens_new_logo.png")}
+                  style={{ width: 85, height: 85 }}
+                  resizeMode="contain"
+                />
+              </View>
+              <ThemedText type="title" style={styles.title}>
+                Join NM Greens
               </ThemedText>
-              <TouchableOpacity onPress={() => router.replace("/auth/login")}>
-                <ThemedText style={{ color: tintColor, fontWeight: "bold" }}>
-                  Login
+              <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
+                Create your player account to start booking
+              </ThemedText>
+            </View>
+
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={mutedColor}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                  ]}
+                  placeholder="Full Name"
+                  placeholderTextColor={mutedColor}
+                  value={name}
+                  onChangeText={setName}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={20}
+                  color={mutedColor}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                  ]}
+                  placeholder="Email Address"
+                  placeholderTextColor={mutedColor}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="call-outline"
+                  size={20}
+                  color={mutedColor}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                  ]}
+                  placeholder="Phone Number"
+                  placeholderTextColor={mutedColor}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={mutedColor}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                  ]}
+                  placeholder="Password"
+                  placeholderTextColor={mutedColor}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color={mutedColor}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={20}
+                  color={mutedColor}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                  ]}
+                  placeholder="Confirm Password"
+                  placeholderTextColor={mutedColor}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showPassword}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.registerButton, { backgroundColor: tintColor }]}
+                onPress={handleRegister}
+                disabled={isLoading}
+              >
+                <ThemedText style={styles.buttonText}>
+                  {isLoading ? "Creating Account..." : "Sign Up"}
                 </ThemedText>
               </TouchableOpacity>
+
+              <View style={styles.footer}>
+                <ThemedText style={[styles.footerText, { color: mutedColor }]}>
+                  Already have an account?{" "}
+                </ThemedText>
+                <TouchableOpacity onPress={() => router.replace("/auth/login")}>
+                  <ThemedText style={{ color: tintColor, fontWeight: "bold" }}>
+                    Login
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </ThemedView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 

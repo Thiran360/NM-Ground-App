@@ -10,10 +10,12 @@ import {
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { useAdminStore } from "@/store/admin-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /** Safely converts any 3- or 6-digit hex color to an rgba() string. */
 function hexToRgba(hex: string, alpha: number): string {
@@ -44,143 +46,212 @@ export default function AdminLoginScreen() {
   const cardBg = useThemeColor({}, "cardBackground");
   const pageBg = useThemeColor({}, "background");
 
-  const handleAdminLogin = () => {
-    setIsLoading(true);
+  const handleAdminLogin = async () => {
+    if (!adminId || !password) {
+      showAlert("Required Fields", "Please enter both Administrator ID and Portal Password.", "warning");
+      return;
+    }
 
-    // Verify against configured credentials
-    setTimeout(() => {
-      if (
-        adminId === adminCredentials.id &&
-        password === adminCredentials.password
-      ) {
-        login("admin", "Arena Manager", undefined, "admin-1");
-        setIsLoading(false);
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        "https://api.codingboss.in/booking/admin-login/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          body: JSON.stringify({
+            email: adminId.trim().toLowerCase(),
+            password: password,
+          }),
+        },
+      );
+
+      let data: any = {};
+      const rawText = await response.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        console.warn("Response is not JSON:", rawText);
+      }
+
+      if (response.ok) {
+        const token = data.token ?? data.access ?? data.key ?? "admin-token";
+        const role = "admin";
+        const userId = data.admin_id?.toString() ?? data.user_id?.toString() ?? "admin-1";
+        const userName = data.full_name ?? data.name ?? "Arena Manager";
+
+        // Persist session
+        await AsyncStorage.setItem("auth_token", token);
+        await AsyncStorage.setItem(
+          "nm_user",
+          JSON.stringify({
+            id: userId,
+            email: data.email ?? adminId,
+            role,
+            full_name: userName,
+          }),
+        );
+
+        login("admin", userName, token, userId);
         router.replace("/admin");
       } else {
-        setIsLoading(false);
-        showAlert(
-          "Authentication Failed",
-          "Invalid Administrator ID or Portal Password.",
-          "error",
-        );
+        // Fallback local admin check if server rejects but local matches
+        if (adminId === adminCredentials.id && password === adminCredentials.password) {
+          login("admin", "Arena Manager", undefined, "admin-1");
+          router.replace("/admin");
+          return;
+        }
+
+        const message =
+          data?.detail ??
+          data?.message ??
+          data?.error ??
+          data?.admin_id?.[0] ??
+          data?.password?.[0] ??
+          "Invalid Administrator ID or Portal Password.";
+        showAlert("Authentication Failed", message, "error");
       }
-    }, 1200);
+    } catch (error: any) {
+      console.error("Admin Login Error:", error);
+
+      // Fallback local admin check on network failure
+      if (adminId === adminCredentials.id && password === adminCredentials.password) {
+        login("admin", "Arena Manager", undefined, "admin-1");
+        router.replace("/admin");
+        return;
+      }
+
+      showAlert(
+        "Network Error",
+        "Could not connect to the server. Please check your connection.",
+        "error",
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: pageBg }]}>
-      <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: pageBg }}>
+      <ThemedView style={[styles.container, { backgroundColor: "transparent" }]}>
+        <Stack.Screen options={{ headerShown: false }} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.flex}
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.flex}
         >
-          <Ionicons name="arrow-back" size={24} color={tintColor} />
-        </TouchableOpacity>
-
-        <View style={styles.header}>
-          <View
-            style={[
-              styles.logoContainer,
-              { backgroundColor: "rgba(0,0,0,0.5)", shadowColor: tintColor },
-            ]}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <Image
-              source={require("@/assets/images/nm-greens-logo.jpg")}
-              style={{ width: 90, height: 90, borderRadius: 20 }}
-              resizeMode="contain"
-            />
-          </View>
-          <ThemedText type="title" style={styles.title}>
-            Manager Portal
-          </ThemedText>
-          <ThemedText style={styles.subtitle}>
-            Secure access for ground administrators
-          </ThemedText>
-        </View>
+            <Ionicons name="arrow-back" size={24} color={tintColor} />
+          </TouchableOpacity>
 
-        <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <MaterialCommunityIcons
-              name="account-key-outline"
-              size={20}
-              color="#94A3B8"
-              style={styles.inputIcon}
-            />
-            <TextInput
+          <View style={styles.header}>
+            <View
               style={[
-                styles.input,
-                { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                styles.logoContainer,
+                { backgroundColor: "rgba(0,0,0,0.5)", shadowColor: tintColor },
               ]}
-              placeholder="Administrator ID"
-              placeholderTextColor="#94A3B8"
-              value={adminId}
-              onChangeText={setAdminId}
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Ionicons
-              name="lock-closed-outline"
-              size={20}
-              color="#94A3B8"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  color: useThemeColor({}, "text"),
-                  backgroundColor: cardBg,
-                  paddingRight: 48,
-                },
-              ]}
-              placeholder="Portal Password"
-              placeholderTextColor="#94A3B8"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeIcon}
             >
-              <Ionicons
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
+              <Image
+                source={require("@/assets/images/nm-greens-logo.jpg")}
+                style={{ width: 90, height: 90, borderRadius: 20 }}
+                resizeMode="contain"
+              />
+            </View>
+            <ThemedText type="title" style={styles.title}>
+              Manager Portal
+            </ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Secure access for ground administrators
+            </ThemedText>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.inputContainer}>
+              <MaterialCommunityIcons
+                name="account-key-outline"
                 size={20}
                 color="#94A3B8"
+                style={styles.inputIcon}
               />
+              <TextInput
+                style={[
+                  styles.input,
+                  { color: useThemeColor({}, "text"), backgroundColor: cardBg },
+                ]}
+                placeholder="Administrator Email"
+                placeholderTextColor="#94A3B8"
+                value={adminId}
+                onChangeText={setAdminId}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={20}
+                color="#94A3B8"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    color: useThemeColor({}, "text"),
+                    backgroundColor: cardBg,
+                    paddingRight: 48,
+                  },
+                ]}
+                placeholder="Portal Password"
+                placeholderTextColor="#94A3B8"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#94A3B8"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginButton, { backgroundColor: tintColor }]}
+              onPress={handleAdminLogin}
+              disabled={isLoading}
+            >
+              <ThemedText style={styles.buttonText}>
+                {isLoading ? "Authenticating..." : "Secure Login"}
+              </ThemedText>
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: tintColor }]}
-            onPress={handleAdminLogin}
-            disabled={isLoading}
-          >
-            <ThemedText style={styles.buttonText}>
-              {isLoading ? "Authenticating..." : "Secure Login"}
+          <View style={styles.footer}>
+            <Ionicons
+              name="information-circle-outline"
+              size={16}
+              color="#94A3B8"
+            />
+            <ThemedText style={styles.footerText}>
+              Authorized access only. All actions are logged.
             </ThemedText>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.footer}>
-          <Ionicons
-            name="information-circle-outline"
-            size={16}
-            color="#94A3B8"
-          />
-          <ThemedText style={styles.footerText}>
-            Authorized access only. All actions are logged.
-          </ThemedText>
-        </View>
-      </KeyboardAvoidingView>
-    </ThemedView>
+          </View>
+        </KeyboardAvoidingView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 

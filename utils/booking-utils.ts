@@ -85,3 +85,15 @@ export function getWeekendPolicyMessage(
 
   return "Next Weekend Pre-booking is OPEN!";
 }
+
+export function formatBookingId(id: any): string {
+  if (!id || id === "N/A") return "NM-000";
+  const strId = String(id).trim();
+  if (/^\d+$/.test(strId)) {
+    return `NM-${strId.padStart(3, "0")}`;
+  }
+  if (strId.toUpperCase().startsWith("NM-")) {
+    return strId.toUpperCase();
+  }
+  return `NM-${strId.toUpperCase()}`;
+}

@@ -6,13 +6,17 @@ import {
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAdminStore } from "@/store/admin-store";
 import { BrandAtmosphere } from "@/components/brand-atmosphere";
 import { VisualAlert } from "@/components/ui/visual-alert";
+import { LogBox } from "react-native";
+
+LogBox.ignoreLogs(["Unable to activate keep awake"]);
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -61,22 +65,26 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <BrandAtmosphere />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/login" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/register" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="auth/admin-login"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
-        />
-      </Stack>
-      <VisualAlert />
-      <StatusBar style="light" />
+      <SafeAreaProvider>
+        <BrandAtmosphere />
+        <View style={{ flex: 1 }}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/login" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="auth/admin-login"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="modal"
+              options={{ presentation: "modal", title: "Modal" }}
+            />
+          </Stack>
+          <VisualAlert />
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaProvider>
     </ThemeProvider>
   );
 }
