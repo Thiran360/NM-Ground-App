@@ -51,20 +51,20 @@ const DEFAULT_GROUNDS: Ground[] = [
   {
     id: "ground-a",
     name: "NM Greens - Ground A",
-    type: "International Cricket Ground",
+    type: "Cricket ball Ground",
     price_per_hour: 1200,
     rating: 4.9,
-    location: "Main Arena, Gate 4",
-    imageUrl: require("@/assets/images/ground_a_premium.png"),
+    location: "Towers1 Block 2, Mambakkam",
+    imageUrl: require("@/assets/images/new_ground_a.png"),
   },
   {
     id: "ground-b",
     name: "NM Greens - Ground B",
-    type: "Premium Match Ground",
+    type: "Tennisball Ground",
     price_per_hour: 1000,
     rating: 4.8,
-    location: "A-Block Championship Area",
-    imageUrl: require("@/assets/images/ground_b_premium.png"),
+    location: "Towers1 Block 2, Mambakkam",
+    imageUrl: require("@/assets/images/new_ground_b.png"),
   },
 ];
 
@@ -241,7 +241,7 @@ class AdminStore {
       const token = this.authToken;
 
       const response = await fetch(
-        `https://api.codingboss.in/booking/user/${userId}/`,
+        `https://refined-alone-causing.ngrok-free.dev/booking/user/${userId}/`,
         {
           method: "GET",
           headers: {
@@ -316,10 +316,18 @@ class AdminStore {
       const booking = this.bookings[index];
       this.bookings[index] = { ...booking, status: "Cancelled" };
 
-      const refundPoints = Math.floor(booking.advancePaid * 0.05);
-      this.loyaltyPoints += refundPoints;
-      if (this.currentUser) {
-        this.currentUser.loyaltyPoints = this.loyaltyPoints;
+      const bookingDate = new Date(booking.date);
+      const today = new Date();
+      const date1 = Date.UTC(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate());
+      const date2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const diffDays = Math.floor((date1 - date2) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 2) {
+        const refundAmount = Math.floor(booking.advancePaid * 0.5);
+        this.walletBalance += refundAmount;
+        if (this.currentUser) {
+          this.currentUser.walletBalance = this.walletBalance;
+        }
       }
 
       this.computeAdminStats();
@@ -467,7 +475,7 @@ class AdminStore {
       const payload: any = { type, id, action, date };
       if (groundId) payload.groundId = groundId;
 
-      const response = await fetch("https://api.codingboss.in/booking/admin/toggle-hold/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/admin/toggle-hold/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

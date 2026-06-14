@@ -38,40 +38,23 @@ import {
 const GROUNDS = [
   {
     id: "ground-a",
-    name: "Cricket Ball Ground",
-    type: "International Cricket Ground",
+    name: "NM Greens - Ground A",
+    type: "Cricket ball Ground",
     rating: 4.9,
-    location: "Main Arena, Gate 4",
-    imageUrl: require("@/assets/images/ground_a_premium.png"),
+    location: "Towers1 Block 2, Mambakkam",
+    imageUrl: require("@/assets/images/new_ground_a.png"),
   },
   {
     id: "ground-b",
-    name: "Tennis Ball Ground",
-    type: "Premium Match Ground",
+    name: "NM Greens - Ground B",
+    type: "Tennisball Ground",
     rating: 4.8,
-    location: "A-Block Championship Area",
-    imageUrl: require("@/assets/images/ground_b_premium.png"),
+    location: "Towers1 Block 2, Mambakkam",
+    imageUrl: require("@/assets/images/new_ground_b.png"),
   },
 ];
 
-// Mock data for fully booked dates
-const getBookedDates = (groundId: string) => {
-  const today = new Date();
-  const format = (d: Date) => d.toISOString().split("T")[0];
 
-  if (groundId === "ground-a") {
-    const d1 = new Date(today);
-    d1.setDate(today.getDate() + 2);
-    const d2 = new Date(today);
-    d2.setDate(today.getDate() + 5);
-    return [format(d1), format(d2)];
-  }
-  const d1 = new Date(today);
-  d1.setDate(today.getDate() + 1);
-  const d3 = new Date(today);
-  d3.setDate(today.getDate() + 4);
-  return [format(d1), format(d3)];
-};
 
 export default function SportsDashboard() {
   const router = useRouter();
@@ -90,7 +73,7 @@ export default function SportsDashboard() {
     heldSlots,
   } = useAdminStore();
   const GROUNDS_DATA = storeGrounds.length > 0 ? storeGrounds : GROUNDS;
-  const [selectedGround, setSelectedGround] = useState(GROUNDS_DATA[0]);
+  const [selectedGround, setSelectedGround] = useState<any | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<
     "Grounds" | "Matches" | "Tournaments"
@@ -104,11 +87,7 @@ export default function SportsDashboard() {
     fetchGrounds();
   }, []);
 
-  useEffect(() => {
-    if (storeGrounds.length > 0 && !selectedGround) {
-      setSelectedGround(storeGrounds[0]);
-    }
-  }, [storeGrounds]);
+
   const isAdmin = user?.role === "admin";
   const mutedColor = useThemeColor({}, "muted");
   const [bookingMode, setBookingMode] = useState<"hourly" | "full">("hourly");
@@ -117,12 +96,12 @@ export default function SportsDashboard() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [policyMsg, setPolicyMsg] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [dynamicBookedDates, setDynamicBookedDates] = useState<string[]>([]);
+
   const [apiTimeSlots, setApiTimeSlots] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
 
   const bookedDates = useMemo(() => {
-    const staticBooked = getBookedDates(selectedGround.id);
+    if (!selectedGround) return [];
 
     // Find any full-day bookings for this ground in the global state
     const globalFullDayBookings = bookings
@@ -135,22 +114,15 @@ export default function SportsDashboard() {
       )
       .map((b) => b.date);
 
-    return [...staticBooked, ...dynamicBookedDates, ...globalFullDayBookings];
-  }, [selectedGround.id, dynamicBookedDates, bookings]);
+    return [...globalFullDayBookings];
+  }, [selectedGround?.id, bookings]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Simulate discovery of a new full-day booking
     setTimeout(() => {
-      const currentKey = selectedDate.toISOString().split("T")[0];
-      setDynamicBookedDates((prev) => {
-        if (prev.includes(currentKey)) return prev;
-        return [...prev, currentKey];
-      });
       setRefreshing(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }, 1500);
   }, [selectedDate]);
 
@@ -159,7 +131,7 @@ export default function SportsDashboard() {
   const isSelectedDateBooked = isDateBooked(selectedDate);
 
   const dateKey = selectedDate.toISOString().split("T")[0];
-  const { locks, selectSlot } = useBookingLock(selectedGround.id, dateKey);
+  const { locks, selectSlot } = useBookingLock(selectedGround?.id || "", dateKey);
   const pricing = useMemo(
     () =>
       getSlotPrice(selectedDate, bookingMode === "full", fullDayType, {
@@ -254,10 +226,11 @@ export default function SportsDashboard() {
 
   // Fetch slots to determine booking modes dynamically
   useEffect(() => {
+    if (!selectedGround) return;
     const fetchModes = async () => {
       try {
         const apiId = selectedGround.id === "ground-a" ? 1 : (selectedGround.id === "ground-b" ? 2 : parseInt(selectedGround.id.replace(/\D/g, '')) || 1);
-        const res = await fetch(`https://api.codingboss.in/booking/grounds-slots/${apiId}/`, {
+        const res = await fetch(`https://refined-alone-causing.ngrok-free.dev/booking/grounds-slots/${apiId}/`, {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
@@ -270,24 +243,30 @@ export default function SportsDashboard() {
         const hasHourly = data.some((s: any) => s.slot_type === "hourly");
         const hasFull = data.some((s: any) => s.slot_type === "12hr" || s.slot_type === "24hr" || s.slot_type === "full_day");
 
-        const modes: ("hourly" | "full")[] = [];
-        if (hasHourly) modes.push("hourly");
-        if (hasFull) modes.push("full");
+        let modes: ("hourly" | "full")[] = [];
+        const isGroundA = selectedGround.id === "ground-a" || String(selectedGround.id) === "1";
 
-        if (modes.length === 0) modes.push("hourly", "full"); // Fallback
+        if (isGroundA) {
+          modes = ["full"];
+        } else {
+          modes = ["hourly", "full"];
+        }
 
         setAvailableModes(modes);
-
         setBookingMode((prev) => (modes.includes(prev) ? prev : modes[0]));
       } catch (err) {
-        console.error("Failed to fetch ground slots:", err);
-        setAvailableModes(["hourly", "full"]);
+        // Silently fallback to mock data
+        const isGroundA = selectedGround.id === "ground-a" || String(selectedGround.id) === "1";
+        const fallbackModes: ("hourly" | "full")[] = isGroundA ? ["full"] : ["hourly", "full"];
+        setAvailableModes(fallbackModes);
+        setBookingMode((prev) => (fallbackModes.includes(prev) ? prev : fallbackModes[0]));
       }
     };
     fetchModes();
-  }, [selectedGround.id]);
+  }, [selectedGround?.id]);
 
   useEffect(() => {
+    if (!selectedGround) return;
     const isGround2 = String(selectedGround.id) === "ground-b" || String(selectedGround.id) === "2";
     if (!isGround2) {
       setApiTimeSlots([]);
@@ -295,7 +274,7 @@ export default function SportsDashboard() {
     }
     const fetchTimeSlots = async () => {
       try {
-        const res = await fetch("https://api.codingboss.in/booking/timeslots/", {
+        const res = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/timeslots/", {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
@@ -307,20 +286,21 @@ export default function SportsDashboard() {
           setApiTimeSlots(data);
         }
       } catch (err) {
-        console.error("Failed to fetch timeslots:", err);
+        // Silently ignore timeslots failure
       }
     };
     fetchTimeSlots();
-  }, [selectedGround.id]);
+  }, [selectedGround?.id]);
 
   const [apiSlotsData, setApiSlotsData] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!selectedGround) return;
     const fetchDateSlots = async () => {
       try {
         const apiId = selectedGround.id === "ground-a" ? 1 : (selectedGround.id === "ground-b" ? 2 : parseInt(selectedGround.id.replace(/\D/g, '')) || 1);
         const dateStr = selectedDate.toISOString().split("T")[0];
-        const res = await fetch(`https://api.codingboss.in/booking/grounds/${apiId}/available-slots/?date=${dateStr}`, {
+        const res = await fetch(`https://refined-alone-causing.ngrok-free.dev/booking/grounds/${apiId}/available-slots/?date=${dateStr}`, {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
@@ -332,11 +312,11 @@ export default function SportsDashboard() {
           setApiSlotsData(data);
         }
       } catch (err) {
-        console.error("Failed to fetch date-wise slots:", err);
+        // Silently ignore date-wise slots failure
       }
     };
     fetchDateSlots();
-  }, [selectedGround.id, selectedDate]);
+  }, [selectedGround?.id, selectedDate]);
 
   useEffect(() => {
     const index = dates.findIndex(
@@ -353,7 +333,7 @@ export default function SportsDashboard() {
     }
   }, [selectedDate, dates]);
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     const selectedSlotIds =
       bookingMode === "full"
         ? []
@@ -375,6 +355,58 @@ export default function SportsDashboard() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    try {
+      let finalSlotType = "hourly";
+      let finalSlots = selectedSlotIds.join(",");
+      let finalIsFullDay = "false";
+      let finalFullDayType = undefined;
+
+      if (bookingMode === "full") {
+        if (fullDayType === "12h") {
+          finalSlotType = "12hr";
+          finalSlots = "";
+          finalIsFullDay = "false";
+        } else if (fullDayType === "24h") {
+          finalSlotType = "24hr";
+          finalSlots = "";
+          finalIsFullDay = "false";
+        } else {
+          finalSlotType = "full_day";
+          finalSlots = "";
+          finalIsFullDay = "true";
+          finalFullDayType = "full_day";
+        }
+      }
+
+      const parsedUserId = user?.id ? parseInt(String(user.id).replace(/\D/g, ''), 10) : 1;
+
+      const payload: any = {
+        userId: isNaN(parsedUserId) ? 1 : parsedUserId,
+        groundId: String(selectedGround.id).includes("b") ? 2 : 1,
+        date: dateKey,
+        slotType: finalSlotType,
+        slots: finalSlots,
+        isFullDay: finalIsFullDay === "true",
+      };
+      if (finalFullDayType) payload.fullDayType = finalFullDayType;
+
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/booking-create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+          ...(user?.accessToken ? { Authorization: `Token ${user.accessToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        console.warn("Booking Create Failed Status:", response.status);
+      }
+    } catch (err) {
+      console.warn("Booking create fetch error:", err);
+    }
 
     router.push({
       pathname: "/sports/booking",
@@ -422,47 +454,7 @@ export default function SportsDashboard() {
         }}
       />
 
-      <ImageBackground
-        source={require("@/assets/images/stadium_header.png")}
-        style={{ height: 260, overflow: "hidden" }}
-      >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              paddingBottom: 40,
-            }}
-          >
-            <MaterialCommunityIcons
-              name="cricket"
-              size={80}
-              color="#fff"
-              style={{ opacity: 0.9 }}
-            />
-            <ThemedText
-              style={{
-                color: "#fff",
-                fontSize: 24,
-                fontWeight: "900",
-                letterSpacing: 2,
-              }}
-            >
-              NM GREENS
-            </ThemedText>
-            <ThemedText
-              style={{
-                color: "rgba(255,255,255,0.8)",
-                fontSize: 13,
-                fontWeight: "bold",
-              }}
-            >
-              PREMIUM SPORTS BOOKING
-            </ThemedText>
-          </View>
-        </View>
-      </ImageBackground>
+
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -476,30 +468,7 @@ export default function SportsDashboard() {
           />
         }
       >
-        {/* Admin Management Banner */}
-        {user?.role === "admin" && (
-          <TouchableOpacity
-            style={[styles.adminBanner, { backgroundColor: tintColor }]}
-            onPress={() => router.push("/admin" as any)}
-          >
-            <View style={styles.adminBannerContent}>
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={24}
-                color="#fff"
-              />
-              <View>
-                <ThemedText style={styles.adminBannerTitle}>
-                  Management Mode Active
-                </ThemedText>
-                <ThemedText style={styles.adminBannerSubtitle}>
-                  Tap to open Manager Dashboard
-                </ThemedText>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#fff" />
-          </TouchableOpacity>
-        )}
+
 
         {/* Category Tabs */}
         <View style={styles.tabsContainer}>
@@ -570,411 +539,427 @@ export default function SportsDashboard() {
                   {...ground}
                   isSelected={selectedGround?.id === ground.id}
                   onPress={() => {
-                    setSelectedGround(ground);
+                    if (selectedGround?.id === ground.id) {
+                      setSelectedGround(null);
+                    } else {
+                      setSelectedGround(ground);
+                    }
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                 />
               ))}
             </View>
 
-            {/* Date Selector */}
-            <View style={styles.sectionHeader}>
-              <View style={styles.headerWithIcon}>
-                <Ionicons name="calendar" size={18} color={tintColor} />
-                <ThemedText type="subtitle">Select Date</ThemedText>
-                <TouchableOpacity
-                  style={[
-                    styles.calendarTrigger,
-                    { backgroundColor: tintColor + "15" },
-                  ]}
-                  onPress={() => setShowCalendar(true)}
-                >
-                  <Ionicons name="open-outline" size={14} color={tintColor} />
-                </TouchableOpacity>
-              </View>
-              {pricing.isWeekend ? (
-                <View
-                  style={[
-                    styles.weekendTag,
-                    {
-                      backgroundColor: tintColor + "20",
-                      borderColor: tintColor,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    style={[styles.weekendText, { color: tintColor }]}
-                  >
-                    NEXT WEEKEND ONLY ⚡
-                  </ThemedText>
-                </View>
-              ) : (
-                <View style={styles.weekdayTag}>
-                  <ThemedText style={styles.weekdayText}>
-                    ADVANCE BOOKING OPEN
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-
-            {/* Weekend Policy Banner */}
-            <View style={styles.policyContainer}>
-              <View
-                style={[
-                  styles.policyBanner,
-                  {
-                    backgroundColor: tintColor + "10",
-                    borderColor: tintColor + "30",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="information-circle"
-                  size={16}
-                  color={tintColor}
-                />
-                <ThemedText style={styles.policyText}>
-                  {getWeekendPolicyMessage(selectedDate, isAdmin) ||
-                    (isAdmin
-                      ? "Manager Oversight: All slots accessible for holding."
-                      : "Weekday bookings are open. Weekends only open for next-week pre-booking during current weekend.")}
-                </ThemedText>
-              </View>
-            </View>
-            <FlatList
-              ref={flatListRef}
-              data={dates}
-              renderItem={renderDateItem}
-              keyExtractor={(item) => item.toISOString()}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.dateList}
-              getItemLayout={(data, index) => ({
-                length: 70, // item width (60) + marginRight (10)
-                offset: 70 * index,
-                index,
-              })}
-            />
-
-            {/* Selection Sections */}
-            {!isSelectedDateBooked ? (
+            {selectedGround && (
               <>
-                {/* Booking Mode Selector */}
-                {availableModes.length > 1 && (
-                  <>
-                    <View style={styles.sectionHeader}>
-                      <View style={styles.headerWithIcon}>
-                        <Ionicons name="options" size={18} color={tintColor} />
-                        <ThemedText type="subtitle">
-                          Select Booking Mode
-                        </ThemedText>
-                      </View>
-                    </View>
-
-                    <View style={styles.modeContainer}>
-                      <TouchableOpacity
-                        style={[
-                          styles.modeCard,
-                          { backgroundColor: cardBg },
-                          bookingMode === "full" && {
-                            borderColor: tintColor,
-                            borderWidth: 2,
-                            backgroundColor: tintColor + "10",
-                          },
-                        ]}
-                        onPress={() => {
-                          setBookingMode("full");
-                          Haptics.impactAsync(
-                            Haptics.ImpactFeedbackStyle.Medium,
-                          );
-                        }}
+                {/* Date Selector */}
+                <View style={styles.sectionHeader}>
+                  <View style={styles.headerWithIcon}>
+                    <Ionicons name="calendar" size={18} color={tintColor} />
+                    <ThemedText type="subtitle">Select Date</ThemedText>
+                    <TouchableOpacity
+                      style={[
+                        styles.calendarTrigger,
+                        { backgroundColor: tintColor + "15" },
+                      ]}
+                      onPress={() => setShowCalendar(true)}
+                    >
+                      <Ionicons name="open-outline" size={14} color={tintColor} />
+                    </TouchableOpacity>
+                  </View>
+                  {pricing.isWeekend ? (
+                    <View
+                      style={[
+                        styles.weekendTag,
+                        {
+                          backgroundColor: tintColor + "20",
+                          borderColor: tintColor,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <ThemedText
+                        style={[styles.weekendText, { color: tintColor }]}
                       >
-                        <MaterialCommunityIcons
-                          name="shield-star"
-                          size={24}
-                          color={bookingMode === "full" ? tintColor : "#94A3B8"}
-                        />
-                        <ThemedText
-                          style={[
-                            styles.modeLabel,
-                            bookingMode === "full" && { color: tintColor },
-                          ]}
-                        >
-                          Full Day
-                        </ThemedText>
-                        <ThemedText style={styles.modeSubLabel}>
-                          Total Ground Access
-                        </ThemedText>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.modeCard,
-                          { backgroundColor: cardBg },
-                          bookingMode === "hourly" && {
-                            borderColor: tintColor,
-                            borderWidth: 2,
-                            backgroundColor: tintColor + "10",
-                          },
-                        ]}
-                        onPress={() => {
-                          setBookingMode("hourly");
-                          Haptics.impactAsync(
-                            Haptics.ImpactFeedbackStyle.Medium,
-                          );
-                        }}
-                      >
-                        <Ionicons
-                          name="time"
-                          size={24}
-                          color={
-                            bookingMode === "hourly" ? tintColor : "#94A3B8"
-                          }
-                        />
-                        <ThemedText
-                          style={[
-                            styles.modeLabel,
-                            bookingMode === "hourly" && { color: tintColor },
-                          ]}
-                        >
-                          Hourly
-                        </ThemedText>
-                        <ThemedText style={styles.modeSubLabel}>
-                          Pay Per Hour
-                        </ThemedText>
-                      </TouchableOpacity>
+                        NEXT WEEKEND ONLY ⚡
+                      </ThemedText>
                     </View>
-                  </>
-                )}
+                  ) : (
+                    <View style={styles.weekdayTag}>
+                      <ThemedText style={styles.weekdayText}>
+                        ADVANCE BOOKING OPEN
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
 
-                {/* Mode Specific Views */}
-                {bookingMode === "full" ? (
+                {/* Weekend Policy Banner */}
+                <View style={styles.policyContainer}>
                   <View
                     style={[
-                      styles.fullDayPassContent,
-                      { backgroundColor: cardBg },
+                      styles.policyBanner,
+                      {
+                        backgroundColor: tintColor + "10",
+                        borderColor: tintColor + "30",
+                      },
                     ]}
                   >
-                    <View style={styles.fullDayHeader}>
-                      <View>
-                        <ThemedText type="defaultSemiBold">
-                          Select Duration
-                        </ThemedText>
-                        <ThemedText style={styles.mutedSmall}>
-                          Choose your exclusive session tier
-                        </ThemedText>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        <ThemedText
-                          style={[styles.fullDayPrice, { color: tintColor }]}
-                        >
-                          ₹{pricing.finalPrice}
-                        </ThemedText>
-                        <ThemedText style={styles.mutedMicro}>
-                          {fullDayType === "12h"
-                            ? "12-HOUR DEAL"
-                            : "24-HOUR DEAL"}
-                        </ThemedText>
-                      </View>
-                    </View>
+                    <Ionicons
+                      name="information-circle"
+                      size={16}
+                      color={tintColor}
+                    />
+                    <ThemedText style={styles.policyText}>
+                      {getWeekendPolicyMessage(selectedDate, isAdmin) ||
+                        (isAdmin
+                          ? "Manager Oversight: All slots accessible for holding."
+                          : "Weekday bookings are open. Weekends only open for next-week pre-booking during current weekend.")}
+                    </ThemedText>
+                  </View>
+                </View>
+                <FlatList
+                  ref={flatListRef}
+                  data={dates}
+                  renderItem={renderDateItem}
+                  keyExtractor={(item) => item.toISOString()}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.dateList}
+                  getItemLayout={(data, index) => ({
+                    length: 70, // item width (60) + marginRight (10)
+                    offset: 70 * index,
+                    index,
+                  })}
+                />
 
-                    <View style={styles.tierSelector}>
-                      {[
-                        {
-                          id: "12h",
-                          label: "12 Hours",
-                          sub: "6 AM – 6 PM",
-                          icon: "sunny",
-                          range: Array.from({ length: 12 }, (_, i) => String(i + 7)),
-                        },
-                        {
-                          id: "24h",
-                          label: "24 Hours",
-                          sub: "Full Cycle",
-                          icon: "moon",
-                          range: Array.from({ length: 24 }, (_, i) => String(i + 1)),
-                        },
-                      ].map((tier) => {
-                        const isLocked = tier.range.some(slotId => {
-                          const isHeldLocally = heldSlots.some(
-                            (h: any) =>
-                              h.groundId === selectedGround.id &&
-                              h.slotId === slotId &&
-                              h.date === dateKey
-                          );
-                          const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
-                          const isBookedOrHeldApi = apiSlot && (apiSlot.is_booked || apiSlot.is_held);
-                          return isHeldLocally || isBookedOrHeldApi;
-                        });
+                {/* Selection Sections */}
+                {!isSelectedDateBooked ? (
+                  <>
+                    {/* Booking Mode Selector */}
+                    {availableModes.length > 1 && (
+                      <>
+                        <View style={styles.sectionHeader}>
+                          <View style={styles.headerWithIcon}>
+                            <Ionicons name="options" size={18} color={tintColor} />
+                            <ThemedText type="subtitle">
+                              Select Booking Mode
+                            </ThemedText>
+                          </View>
+                        </View>
 
-                        return (
+                        <View style={styles.modeContainer}>
                           <TouchableOpacity
-                            key={tier.id}
                             style={[
-                              styles.tierButton,
-                              fullDayType === tier.id && !isLocked && {
-                                backgroundColor: tintColor,
+                              styles.modeCard,
+                              { backgroundColor: cardBg },
+                              bookingMode === "full" && {
                                 borderColor: tintColor,
+                                borderWidth: 2,
+                                backgroundColor: tintColor + "10",
                               },
-                              isLocked && {
-                                opacity: 0.6,
-                                backgroundColor: "rgba(128, 128, 128, 0.1)",
-                                borderColor: "transparent",
-                              }
                             ]}
-                            disabled={isLocked}
                             onPress={() => {
-                              if (isLocked) return;
-                              setFullDayType(tier.id as any);
+                              setBookingMode("full");
+                              Haptics.impactAsync(
+                                Haptics.ImpactFeedbackStyle.Medium,
+                              );
+                            }}
+                          >
+                            <MaterialCommunityIcons
+                              name="shield-star"
+                              size={24}
+                              color={bookingMode === "full" ? tintColor : "#94A3B8"}
+                            />
+                            <ThemedText
+                              style={[
+                                styles.modeLabel,
+                                bookingMode === "full" && { color: tintColor },
+                              ]}
+                            >
+                              Full Day
+                            </ThemedText>
+                            <ThemedText style={styles.modeSubLabel}>
+                              Total Ground Access
+                            </ThemedText>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.modeCard,
+                              { backgroundColor: cardBg },
+                              bookingMode === "hourly" && {
+                                borderColor: tintColor,
+                                borderWidth: 2,
+                                backgroundColor: tintColor + "10",
+                              },
+                            ]}
+                            onPress={() => {
+                              setBookingMode("hourly");
                               Haptics.impactAsync(
                                 Haptics.ImpactFeedbackStyle.Medium,
                               );
                             }}
                           >
                             <Ionicons
-                              name={isLocked ? "lock-closed" : tier.icon as any}
-                              size={14}
-                              color={isLocked ? "#EF4444" : fullDayType === tier.id ? "#fff" : tintColor}
+                              name="time"
+                              size={24}
+                              color={
+                                bookingMode === "hourly" ? tintColor : "#94A3B8"
+                              }
                             />
-                            <View>
-                              <ThemedText
-                                style={[
-                                  styles.tierLabel,
-                                  fullDayType === tier.id && !isLocked && { color: "#fff" },
-                                  isLocked && { color: "#EF4444", textDecorationLine: "line-through" }
-                                ]}
-                              >
-                                {tier.label}
-                              </ThemedText>
-                              <ThemedText
-                                style={[
-                                  styles.tierSub,
-                                  fullDayType === tier.id && !isLocked && {
-                                    color: "rgba(255,255,255,0.7)",
-                                  },
-                                  isLocked && { color: "#EF4444" }
-                                ]}
-                              >
-                                {isLocked ? "LOCKED BY ADMIN" : tier.sub}
-                              </ThemedText>
-                            </View>
+                            <ThemedText
+                              style={[
+                                styles.modeLabel,
+                                bookingMode === "hourly" && { color: tintColor },
+                              ]}
+                            >
+                              Hourly
+                            </ThemedText>
+                            <ThemedText style={styles.modeSubLabel}>
+                              Pay Per Hour
+                            </ThemedText>
                           </TouchableOpacity>
-                        )
-                      })}
-                    </View>
-                  </View>
-                ) : (
-                  <View style={{ marginTop: 20 }}>
-                    <View style={styles.sectionHeader}>
-                      <View style={styles.headerWithIcon}>
-                        <Ionicons name="time" size={18} color={tintColor} />
-                        <ThemedText type="subtitle">Hourly Slots</ThemedText>
-                      </View>
-                    </View>
+                        </View>
+                      </>
+                    )}
 
-                    {["Morning", "Afternoon", "Evening", "Night"].map(
-                      (category) => {
-                        const slotsInCategory = (
-                          apiTimeSlots.length > 0
-                            ? apiTimeSlots
-                            : getDynamicTimeSlots(selectedDate)
-                        ).filter(
-                          (s: any) => s.category === category && s.duration === 1
-                        );
-                        if (slotsInCategory.length === 0) return null;
-                        return (
-                          <View key={category} style={styles.categoryContainer}>
-                            <View style={styles.categoryHeader}>
-                              <Ionicons
-                                name={
-                                  category === "Morning"
-                                    ? "sunny"
-                                    : category === "Afternoon"
-                                      ? "partly-sunny"
-                                      : category === "Evening"
-                                        ? "moon"
-                                        : "sparkles"
-                                }
-                                size={14}
-                                color={tintColor}
-                              />
-                              <ThemedText style={styles.categoryTitle}>
-                                {category}
-                              </ThemedText>
-                            </View>
-                            <View style={styles.slotsGrid}>
-                              {slotsInCategory.map((slot) => {
-                                const slotId = String(slot.slot_id || slot.id);
-                                let status =
-                                  locks[`${selectedGround.id}-${slotId}`]
-                                    ?.status || "available";
-
-                                const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
-                                if (apiSlot && apiSlot.is_booked) {
-                                  status = "booked";
-                                } else if (
-                                  (apiSlot && apiSlot.is_held) ||
-                                  heldSlots.some(
-                                    (h: any) =>
-                                      h.groundId === selectedGround.id &&
-                                      h.slotId === slotId &&
-                                      h.date === dateKey
-                                  )
-                                ) {
-                                  status = "locked";
-                                }
-
-                                return (
-                                  <SportsSlot
-                                    key={slotId}
-                                    id={slotId}
-                                    label={slot.label}
-                                    status={status}
-                                    price={pricing.finalPrice}
-                                    onPress={selectSlot}
-                                    variant="hourly"
-                                    duration={slot.duration}
-                                  />
-                                );
-                              })}
-                            </View>
+                    {/* Mode Specific Views */}
+                    {bookingMode === "full" ? (
+                      <View
+                        style={[
+                          styles.fullDayPassContent,
+                          { backgroundColor: cardBg },
+                        ]}
+                      >
+                        <View style={styles.fullDayHeader}>
+                          <View>
+                            <ThemedText type="defaultSemiBold">
+                              Select Duration
+                            </ThemedText>
+                            <ThemedText style={styles.mutedSmall}>
+                              Choose your exclusive session tier
+                            </ThemedText>
                           </View>
-                        );
-                      })}
+                          <View style={{ alignItems: "flex-end" }}>
+                            <ThemedText
+                              style={[styles.fullDayPrice, { color: tintColor }]}
+                            >
+                              ₹{pricing.finalPrice}
+                            </ThemedText>
+                            <ThemedText style={styles.mutedMicro}>
+                              {fullDayType === "12h"
+                                ? "12-HOUR DEAL"
+                                : "24-HOUR DEAL"}
+                            </ThemedText>
+                          </View>
+                        </View>
+
+                        <View style={styles.tierSelector}>
+                          {[
+                            {
+                              id: "12h",
+                              label: "12 Hours",
+                              sub: "6 AM – 6 PM",
+                              icon: "sunny",
+                              range: Array.from({ length: 12 }, (_, i) => String(i + 7)),
+                            },
+                            {
+                              id: "24h",
+                              label: "24 Hours",
+                              sub: "Full Cycle",
+                              icon: "moon",
+                              range: Array.from({ length: 24 }, (_, i) => String(i + 1)),
+                            },
+                          ].map((tier) => {
+                            const isLocked = tier.range.some(slotId => {
+                              const isHeldLocally = heldSlots.some(
+                                (h: any) =>
+                                  h.groundId === selectedGround.id &&
+                                  h.slotId === slotId &&
+                                  h.date === dateKey
+                              );
+                              const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
+                              const isBookedOrHeldApi = apiSlot && (apiSlot.is_booked || apiSlot.is_held);
+                              return isHeldLocally || isBookedOrHeldApi;
+                            });
+
+                            return (
+                              <TouchableOpacity
+                                key={tier.id}
+                                style={[
+                                  styles.tierButton,
+                                  fullDayType === tier.id && !isLocked && {
+                                    backgroundColor: tintColor,
+                                    borderColor: tintColor,
+                                  },
+                                  isLocked && {
+                                    opacity: 0.6,
+                                    backgroundColor: "rgba(128, 128, 128, 0.1)",
+                                    borderColor: "transparent",
+                                  }
+                                ]}
+                                disabled={isLocked}
+                                onPress={() => {
+                                  if (isLocked) return;
+                                  setFullDayType(tier.id as any);
+                                  Haptics.impactAsync(
+                                    Haptics.ImpactFeedbackStyle.Medium,
+                                  );
+                                }}
+                              >
+                                <Ionicons
+                                  name={isLocked ? "lock-closed" : tier.icon as any}
+                                  size={14}
+                                  color={isLocked ? "#EF4444" : fullDayType === tier.id ? "#fff" : tintColor}
+                                />
+                                <View>
+                                  <ThemedText
+                                    style={[
+                                      styles.tierLabel,
+                                      fullDayType === tier.id && !isLocked && { color: "#fff" },
+                                      isLocked && { color: "#EF4444", textDecorationLine: "line-through" }
+                                    ]}
+                                  >
+                                    {tier.label}
+                                  </ThemedText>
+                                  <ThemedText
+                                    style={[
+                                      styles.tierSub,
+                                      fullDayType === tier.id && !isLocked && {
+                                        color: "rgba(255,255,255,0.7)",
+                                      },
+                                      isLocked && { color: "#EF4444" }
+                                    ]}
+                                  >
+                                    {isLocked ? "LOCKED BY ADMIN" : tier.sub}
+                                  </ThemedText>
+                                </View>
+                              </TouchableOpacity>
+                            )
+                          })}
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{ marginTop: 20 }}>
+                        <View style={styles.sectionHeader}>
+                          <View style={styles.headerWithIcon}>
+                            <Ionicons name="time" size={18} color={tintColor} />
+                            <ThemedText type="subtitle">Hourly Slots</ThemedText>
+                          </View>
+                        </View>
+
+                        {["Morning", "Afternoon", "Evening", "Night"].map(
+                          (category) => {
+                            const day = selectedDate.getDay();
+                            const isWeekend = day === 0 || day === 6;
+
+                            const filteredApiSlots = apiTimeSlots.filter((s: any) => {
+                              const isWeekendSlot = String(s.slot_id || s.id).includes("weekend") || s.duration > 1;
+                              return isWeekend ? isWeekendSlot : !isWeekendSlot;
+                            });
+
+                            const slotsInCategory = (
+                              apiTimeSlots.length > 0
+                                ? filteredApiSlots
+                                : getDynamicTimeSlots(selectedDate)
+                            ).filter(
+                              (s: any) => s.category === category
+                            );
+                            if (slotsInCategory.length === 0) return null;
+                            return (
+                              <View key={category} style={styles.categoryContainer}>
+                                <View style={styles.categoryHeader}>
+                                  <Ionicons
+                                    name={
+                                      category === "Morning"
+                                        ? "sunny"
+                                        : category === "Afternoon"
+                                          ? "partly-sunny"
+                                          : category === "Evening"
+                                            ? "moon"
+                                            : "sparkles"
+                                    }
+                                    size={14}
+                                    color={tintColor}
+                                  />
+                                  <ThemedText style={styles.categoryTitle}>
+                                    {category}
+                                  </ThemedText>
+                                </View>
+                                <View style={styles.slotsGrid}>
+                                  {slotsInCategory.map((slot) => {
+                                    const slotId = String(slot.slot_id || slot.id);
+                                    let status =
+                                      locks[`${selectedGround.id}-${slotId}`]
+                                        ?.status || "available";
+
+                                    const apiSlot = apiSlotsData.find(s => String(s.slot_id) === slotId);
+                                    if (apiSlot && apiSlot.is_booked) {
+                                      status = "booked";
+                                    } else if (
+                                      (apiSlot && apiSlot.is_held) ||
+                                      heldSlots.some(
+                                        (h: any) =>
+                                          h.groundId === selectedGround.id &&
+                                          h.slotId === slotId &&
+                                          h.date === dateKey
+                                      )
+                                    ) {
+                                      status = "locked";
+                                    }
+
+                                    return (
+                                      <SportsSlot
+                                        key={slotId}
+                                        id={slotId}
+                                        label={slot.label}
+                                        status={status}
+                                        price={pricing.finalPrice}
+                                        onPress={selectSlot}
+                                        variant={slot.duration > 1 ? "session" : "hourly"}
+                                        duration={slot.duration}
+                                      />
+                                    );
+                                  })}
+                                </View>
+                              </View>
+                            );
+                          })}
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  /* Fully Booked Empty State */
+                  <View style={styles.bookedEmptyState}>
+                    <View
+                      style={[
+                        styles.bookedIconContainer,
+                        { backgroundColor: tintColor + "10" },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="calendar-lock"
+                        size={60}
+                        color={tintColor}
+                      />
+                    </View>
+                    <ThemedText type="subtitle" style={styles.bookedTitle}>
+                      Fully Reserved
+                    </ThemedText>
+                    <ThemedText style={styles.bookedSubtitle}>
+                      {`This arena is completely booked for a full-day event on this date. Please check alternate dates or grounds.`}
+                    </ThemedText>
+                    <TouchableOpacity
+                      style={[styles.alternateButton, { borderColor: tintColor }]}
+                      onPress={() => setShowCalendar(true)}
+                    >
+                      <ThemedText style={{ color: tintColor, fontWeight: "bold" }}>
+                        Check Other Dates
+                      </ThemedText>
+                    </TouchableOpacity>
                   </View>
                 )}
               </>
-            ) : (
-              /* Fully Booked Empty State */
-              <View style={styles.bookedEmptyState}>
-                <View
-                  style={[
-                    styles.bookedIconContainer,
-                    { backgroundColor: tintColor + "10" },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-lock"
-                    size={60}
-                    color={tintColor}
-                  />
-                </View>
-                <ThemedText type="subtitle" style={styles.bookedTitle}>
-                  Fully Reserved
-                </ThemedText>
-                <ThemedText style={styles.bookedSubtitle}>
-                  {`This arena is completely booked for a full-day event on this date. Please check alternate dates or grounds.`}
-                </ThemedText>
-                <TouchableOpacity
-                  style={[styles.alternateButton, { borderColor: tintColor }]}
-                  onPress={() => setShowCalendar(true)}
-                >
-                  <ThemedText style={{ color: tintColor, fontWeight: "bold" }}>
-                    Check Other Dates
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
             )}
           </>
         ) : activeTab === "Matches" ? (
@@ -1025,7 +1010,7 @@ export default function SportsDashboard() {
       </ScrollView>
 
       {/* Sticky Booking Button */}
-      {activeTab === "Grounds" && !isSelectedDateBooked && (
+      {activeTab === "Grounds" && selectedGround && !isSelectedDateBooked && (
         <View style={[styles.bookingBar, { backgroundColor: cardBg }]}>
           <View>
             <ThemedText style={styles.totalLabel}>Total Price</ThemedText>

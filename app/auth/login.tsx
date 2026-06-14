@@ -103,7 +103,7 @@ export default function LoginScreen() {
         password: password
       };
 
-      const response = await fetch("https://api.codingboss.in/booking/login/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/login/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -177,7 +177,7 @@ export default function LoginScreen() {
 
     setIsForgotLoading(true);
     try {
-      const response = await fetch("https://api.codingboss.in/booking/forgot-password/send-code/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/forgot-password/send-code/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
@@ -204,7 +204,7 @@ export default function LoginScreen() {
 
     setIsForgotLoading(true);
     try {
-      const response = await fetch("https://api.codingboss.in/booking/forgot-password/verify-code/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/forgot-password/verify-code/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim().toLowerCase(), code: forgotCode }),
@@ -231,7 +231,7 @@ export default function LoginScreen() {
 
     setIsForgotLoading(true);
     try {
-      const response = await fetch("https://api.codingboss.in/booking/forgot-password/reset/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/forgot-password/reset/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

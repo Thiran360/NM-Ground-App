@@ -21,7 +21,7 @@ export default function AdminBookingsPage() {
   useEffect(() => {
     const fetchAdminBookings = async () => {
       try {
-        const response = await fetch("https://api.codingboss.in/booking/admin/bookings/", {
+        const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/admin/bookings/", {
           headers: {
             "ngrok-skip-browser-warning": "true",
             "Content-Type": "application/json",

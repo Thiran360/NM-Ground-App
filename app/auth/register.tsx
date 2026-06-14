@@ -75,7 +75,7 @@ export default function RegisterScreen() {
     try {
       const userEmail = email.trim().toLowerCase();
 
-      const response = await fetch("https://api.codingboss.in/booking/signup/", {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/signup/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

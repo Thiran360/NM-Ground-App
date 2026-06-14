@@ -45,16 +45,17 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isInitialized) return;
 
-    // Check if the current route is in the auth group
+    // Check route groups
     const inAuthGroup = segments[0] === "auth";
+    const isAdminGroup = segments[0] === "admin";
 
     const timer = setTimeout(() => {
       if (!user && !inAuthGroup) {
         router.replace("/auth/login");
-      } else if (user && inAuthGroup) {
-        if (user.role === "admin") {
+      } else if (user) {
+        if (user.role === "admin" && !isAdminGroup) {
           router.replace("/admin");
-        } else {
+        } else if (user.role === "user" && (inAuthGroup || isAdminGroup)) {
           router.replace("/(tabs)");
         }
       }

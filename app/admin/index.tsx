@@ -5,6 +5,7 @@ import {
   ScrollView,
   View,
   Image,
+  ImageBackground,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -92,7 +93,7 @@ export default function AdminDashboard() {
     const fetchPricing = async () => {
       try {
         const response = await fetch(
-          "https://api.codingboss.in/booking/admin/ground-slot/pricing-update/",
+          "https://refined-alone-causing.ngrok-free.dev/booking/admin/ground-slot/pricing-update/",
           {
             method: "GET",
             headers: {
@@ -119,7 +120,7 @@ export default function AdminDashboard() {
 
     const fetchGrounds = async () => {
       try {
-        const response = await fetch("https://api.codingboss.in/booking/grounds/", {
+        const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/grounds/", {
           headers: { "ngrok-skip-browser-warning": "true" }
         });
         if (response.ok) {
@@ -145,7 +146,7 @@ export default function AdminDashboard() {
 
     const fetchAdminBookings = async () => {
       try {
-        const response = await fetch("https://api.codingboss.in/booking/admin/bookings/", {
+        const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/admin/bookings/", {
           headers: {
             "ngrok-skip-browser-warning": "true",
             "Content-Type": "application/json",
@@ -252,7 +253,7 @@ export default function AdminDashboard() {
     setIsSaving(true);
     try {
       const response = await fetch(
-        `https://api.codingboss.in/booking/admin/ground-slot/pricing-update/`,
+        `https://refined-alone-causing.ngrok-free.dev/booking/admin/ground-slot/pricing-update/`,
         {
           method: "POST",
           headers: {
@@ -313,7 +314,7 @@ export default function AdminDashboard() {
     try {
       const adminIdValue = user?.id || "6"; // Fallback to 6 if undefined
       const response = await fetch(
-        `https://api.codingboss.in/booking/admin-update/${adminIdValue}/`,
+        `https://refined-alone-causing.ngrok-free.dev/booking/admin-update/${adminIdValue}/`,
         {
           method: "PUT",
           headers: {
@@ -358,16 +359,40 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleUpdatePromotions = () => {
+  const handleUpdatePromotions = async () => {
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch("https://refined-alone-causing.ngrok-free.dev/booking/coupon/create-update/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          code: couponCode,
+          discount_percentage: couponPercentage,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update coupon on server");
+      }
+
       showAlert(
         "Promotions Updated",
         `Coupon ${couponCode} with ${couponPercentage}% discount has been saved.`,
         "success",
       );
+    } catch (error) {
+      console.error("Coupon update error:", error);
+      showAlert(
+        "Update Failed",
+        "Could not reach server. Settings applied locally.",
+        "warning",
+      );
+    } finally {
       setIsSaving(false);
-    }, 600);
+    }
   };
 
   const tintColor = useThemeColor({}, "tint");
@@ -407,7 +432,12 @@ export default function AdminDashboard() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={[styles.welcomeCard, { backgroundColor: tintColor }]}>
+          <ImageBackground
+            source={require("@/assets/images/cricket_ball_ground_image.jpg")}
+            style={[styles.welcomeCard, { overflow: 'hidden' }]}
+            imageStyle={{ borderRadius: 24 }}
+          >
+            <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' }} />
             <View>
               <ThemedText style={styles.welcomeTitle}>
                 Hello, Manager!
@@ -421,7 +451,7 @@ export default function AdminDashboard() {
               size={50}
               color="#fff"
             />
-          </View>
+          </ImageBackground>
 
           <ScrollView
             horizontal

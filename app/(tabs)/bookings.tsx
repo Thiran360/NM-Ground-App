@@ -26,10 +26,7 @@ export default function BookingsScreen() {
 
   const fetchMyBookings = async () => {
     try {
-      // WORKAROUND: The my-bookings endpoint is currently throwing a 500 server error
-      // due to a missing Player query. We bypass this by fetching the admin bookings
-      // list and filtering it locally for the current user.
-      const response = await fetch("https://api.codingboss.in/booking/admin/bookings/", {
+      const response = await fetch(`https://refined-alone-causing.ngrok-free.dev/booking/my-bookings/?userId=${user?.id || 10}`, {
         headers: {
           "ngrok-skip-browser-warning": "true",
           "Content-Type": "application/json",
@@ -51,9 +48,9 @@ export default function BookingsScreen() {
 
           return {
             ...b,
-            id: String(b.bookingId || b.id || "0"),
+            id: String(b.booking_id || b.bookingId || b.id || "0"),
             groundId: String(b.groundId || b.ground_id || "1"),
-            groundName: b.groundName,
+            groundName: b.groundName || b.ground,
             date: b.bookingDate || b.date || new Date().toISOString(),
             status: status,
             isFullDay: b.slotType === "full_day" || b.is_full_day === "true" || b.isFullDay === true,
@@ -64,14 +61,7 @@ export default function BookingsScreen() {
           };
         });
 
-        // Filter locally for the current user's bookings
-        const myFilteredBookings = mappedBookings.filter((b: any) =>
-          String(b.customerId) === String(user?.id) ||
-          String(b.customerName).toLowerCase() === String(user?.id).toLowerCase() ||
-          String(b.customerName).toLowerCase() === String(user?.name).toLowerCase()
-        );
-
-        setApiBookings(myFilteredBookings);
+        setApiBookings(mappedBookings);
       } else {
         console.warn("My bookings fetch failed. Status:", response.status);
         setApiBookings(localBookings.filter((b: any) => String(b.user) === String(user?.id) || String(b.player) === String(user?.id)));
@@ -94,7 +84,7 @@ export default function BookingsScreen() {
 
   const handleCancel = async (bookingId: string) => {
     try {
-      await fetch("https://api.codingboss.in/booking/cancel-booking/", {
+      await fetch("https://refined-alone-causing.ngrok-free.dev/booking/cancel-booking/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -133,10 +123,19 @@ export default function BookingsScreen() {
     const slots = getDynamicTimeSlots(bookingDate);
     return parsedSlots
       .map((id) => {
-        const actualId =
+        let actualId =
           typeof id === "object" && id !== null
             ? String(id.id || id.slotId || id.time || id.time_slot || id)
             : String(id);
+
+        actualId = actualId.replace(/[\[\]"']/g, '').trim();
+
+        const weekendMap: any = {
+          "weekend-m": "Morning 8 AM – 12 PM",
+          "weekend-a": "Afternoon 1 PM – 5 PM",
+          "weekend-e": "Evening 6 PM – 10 PM",
+        };
+        if (weekendMap[actualId]) return weekendMap[actualId];
 
         const slot =
           slots.find((s) => String(s.id) === actualId) ||
@@ -160,11 +159,7 @@ export default function BookingsScreen() {
 
   const userBookings = apiBookings;
 
-  const sortedBookings = [...userBookings].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  );
-
-  const filteredBookings = sortedBookings.filter((b) => {
+  const filteredBookings = userBookings.filter((b) => {
     if (activeTab === "Confirmed") {
       return b.status === "Confirmed";
     }
@@ -177,8 +172,12 @@ export default function BookingsScreen() {
     return true;
   });
 
-  // Reverse so recent is at top
-  const displayBookings = [...filteredBookings].reverse();
+  // Sort by ID number descending
+  const displayBookings = [...filteredBookings].sort((a, b) => {
+    const idA = parseInt(String(a.id).replace(/\D/g, '') || "0", 10);
+    const idB = parseInt(String(b.id).replace(/\D/g, '') || "0", 10);
+    return idB - idA;
+  });
 
   const renderBookingCard = (booking: any, index: number) => {
     const bookingDate = new Date(booking.date);
@@ -336,9 +335,22 @@ export default function BookingsScreen() {
               <TouchableOpacity
                 style={[styles.actionButton, { borderColor: "#EF4444" }]}
                 onPress={() => {
+                  const bookingDate = new Date(booking.date);
+                  const today = new Date();
+                  const date1 = Date.UTC(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate());
+                  const date2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                  const diffDays = Math.floor((date1 - date2) / (1000 * 60 * 60 * 24));
+                  
+                  let refundMsg = "";
+                  if (diffDays > 2) {
+                    refundMsg = `As per policy, you will receive a 50% refund of ₹${Math.floor(booking.advancePaid * 0.5)} to your Wallet.`;
+                  } else {
+                    refundMsg = `As per policy, cancellations within 2 days of the booking date receive NO refund. 100% of your paid amount will be deducted.`;
+                  }
+
                   Alert.alert(
                     "Cancel Booking?",
-                    `Are you sure you want to cancel? As per policy, you will receive a refund of ${Math.floor(booking.advancePaid * 0.05)} pts to your NM Greens Wallet.`,
+                    `Are you sure you want to cancel? ${refundMsg}`,
                     [
                       { text: "Keep Booking", style: "cancel" },
                       {

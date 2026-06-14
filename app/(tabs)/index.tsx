@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Stack, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Dimensions,
   FlatList,
@@ -13,7 +13,6 @@ import {
 } from "react-native";
 
 import { HelloWave } from "@/components/hello-wave";
-import { StatsLeaderboard } from "@/components/home/stats-leaderboard";
 import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -32,11 +31,28 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [apiWalletPoints, setApiWalletPoints] = useState<number | null>(null);
 
+  const scrollRef = useRef<ScrollView>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => {
+        const next = (prev + 1) % 3;
+        scrollRef.current?.scrollTo({
+          x: next * (SCREEN_WIDTH - 25), // item width (SCREEN_WIDTH - 40) + gap (15)
+          animated: true,
+        });
+        return next;
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchApiWallet = async () => {
     if (!user?.id) return;
     try {
       const res = await fetch(
-        `https://api.codingboss.in/booking/wallet/?userId=${user.id}`,
+        `https://refined-alone-causing.ngrok-free.dev/booking/wallet/?userId=${user.id}`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -46,13 +62,13 @@ export default function HomeScreen() {
       );
       if (res.ok) {
         const data = await res.json();
-        setApiWalletPoints(data.wallet_points ?? 0);
+        setApiWalletPoints(data.wallet_balance ?? data.wallet_points ?? null);
       } else {
-        setApiWalletPoints(0);
+        setApiWalletPoints(null);
       }
     } catch (e) {
       console.warn("Wallet API fetch failed:", e);
-      setApiWalletPoints(0);
+      setApiWalletPoints(null);
     }
   };
 
@@ -220,23 +236,42 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView
+            ref={scrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
-            pagingEnabled
-            snapToInterval={SCREEN_WIDTH - 40}
+            pagingEnabled={false}
+            snapToInterval={SCREEN_WIDTH - 25}
+            snapToAlignment="start"
+            disableIntervalMomentum={true}
             decelerationRate="fast"
             contentContainerStyle={styles.carouselContainer}
+            onScroll={(e) => {
+              const x = e.nativeEvent.contentOffset.x;
+              const newIndex = Math.round(x / (SCREEN_WIDTH - 25));
+              if (newIndex >= 0 && newIndex <= 2 && newIndex !== currentIndex) {
+                setCurrentIndex(newIndex);
+              }
+            }}
+            scrollEventThrottle={16}
           >
             {[
               {
                 id: "1",
-                image: require("@/assets/images/ground_a_premium.png"),
-                title: "Cricket Ball Ground",
+                image: require("@/assets/images/slider_1.png"),
+                title: "Premium Pitch",
+                subtitle: "Professional Grade Matting",
               },
               {
                 id: "2",
-                image: require("@/assets/images/ground_b_premium.png"),
-                title: "Tennis Ball Ground",
+                image: require("@/assets/images/slider_2.png"),
+                title: "Lush Outfield",
+                subtitle: "Perfect for Tournaments",
+              },
+              {
+                id: "3",
+                image: require("@/assets/images/slider_3.png"),
+                title: "Match Ready",
+                subtitle: "Join the Excitement",
               },
             ].map((item) => (
               <TouchableOpacity
@@ -247,27 +282,39 @@ export default function HomeScreen() {
               >
                 <Image source={item.image} style={styles.carouselImage} />
                 <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.7)"]}
+                  colors={["transparent", "rgba(0,0,0,0.8)"]}
                   style={styles.carouselGradient}
                 />
                 <View style={styles.carouselContent}>
-                  <ThemedText style={styles.carouselTitle}>
-                    {item.title}
-                  </ThemedText>
+                  <View>
+                    <ThemedText style={styles.carouselTitle}>
+                      {item.title}
+                    </ThemedText>
+                    <ThemedText style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 4 }}>
+                      {item.subtitle}
+                    </ThemedText>
+                  </View>
                   <View style={styles.carouselBadge}>
                     <Ionicons name="sparkles" size={12} color="#F9A825" />
                     <ThemedText style={styles.carouselBadgeText}>
-                      PREMIUM
+                      FEATURED
                     </ThemedText>
                   </View>
                 </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-
-        <View style={styles.section}>
-          <StatsLeaderboard />
+          <View style={styles.paginationContainer}>
+            {[0, 1, 2].map((i) => (
+              <View
+                key={i}
+                style={[
+                  styles.paginationDot,
+                  currentIndex === i ? styles.paginationDotActive : null,
+                ]}
+              />
+            ))}
+          </View>
         </View>
 
         {/* Financial & Rewards Section */}
@@ -293,10 +340,10 @@ export default function HomeScreen() {
                   </View>
                   <View>
                     <ThemedText style={styles.premiumWalletLabel}>
-                      TOTAL NM GREENS POINTS
+                      TOTAL NM GREENS WALLET BALANCE
                     </ThemedText>
                     <ThemedText style={styles.premiumWalletValue}>
-                      {apiWalletPoints !== null ? apiWalletPoints : 0} pts
+                      ₹{apiWalletPoints !== null ? apiWalletPoints : (user?.walletBalance || 0)}
                     </ThemedText>
                   </View>
                 </View>
@@ -647,5 +694,22 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1,
+  },
+  paginationContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 15,
+    gap: 8,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(128,128,128,0.3)",
+  },
+  paginationDotActive: {
+    width: 24,
+    backgroundColor: "#F9A825",
   },
 });

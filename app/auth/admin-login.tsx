@@ -55,7 +55,7 @@ export default function AdminLoginScreen() {
     setIsLoading(true);
     try {
       const response = await fetch(
-        "https://api.codingboss.in/booking/admin-login/",
+        "https://refined-alone-causing.ngrok-free.dev/booking/admin-login/",
         {
           method: "POST",
           headers: {

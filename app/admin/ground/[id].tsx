@@ -12,7 +12,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { useAdminStore } from "@/store/admin-store";
-import { TIME_SLOTS } from "@/utils/pricing";
+import { TIME_SLOTS, getDynamicTimeSlots } from "@/utils/pricing";
 
 export default function AdminGroundManagement() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,14 +33,14 @@ export default function AdminGroundManagement() {
       Evening: [],
       Night: [],
     };
-    TIME_SLOTS.forEach((slot) => {
+    getDynamicTimeSlots(selectedDate).forEach((slot) => {
       const category = slot.category as keyof typeof groups;
       if (groups[category]) {
         groups[category].push(slot);
       }
     });
     return groups;
-  }, []);
+  }, [selectedDate]);
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -57,8 +57,8 @@ export default function AdminGroundManagement() {
     }
   };
 
-  const isGroundA = id === "ground-a";
-  const isGroundB = id === "ground-b";
+  const isGroundA = id === "ground-a" || id === "1";
+  const isGroundB = id === "ground-b" || id === "2";
 
   const handleToggleBlock = (range: number[]) => {
     // Check if fully held
@@ -83,7 +83,7 @@ export default function AdminGroundManagement() {
       if (shouldHold !== isCurrentlyHeld) {
         toggleHold(id!, String(slotId), dateKey);
         const mappedId = typeof slotId === 'number' ? slotId + 24 : parseInt(slotId as any) + 24;
-        const parsedGroundId = id === "ground-b" ? 2 : 1;
+        const parsedGroundId = isGroundB ? 2 : 1;
         toggleHoldApi("timeslot", mappedId, shouldHold ? "hold" : "release", dateKey, parsedGroundId);
       }
     });
@@ -117,7 +117,7 @@ export default function AdminGroundManagement() {
 
   const dates = useMemo(() => {
     const list = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 30; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
       list.push(d);
@@ -308,7 +308,9 @@ export default function AdminGroundManagement() {
                 Individual Hourly Slots
               </ThemedText>
             )}
-            {Object.entries(groupedSlots).map(([category, slots]) => (
+            {Object.entries(groupedSlots).map(([category, slots]) => {
+              if (slots.length === 0) return null;
+              return (
               <View key={category} style={styles.categorySection}>
                 <View style={styles.categoryHeader}>
                   <Ionicons
@@ -364,7 +366,7 @@ export default function AdminGroundManagement() {
                           else if (slot.id === 'weekend-a') mappedId = 50;
                           else if (slot.id === 'weekend-e') mappedId = 51;
                           
-                          const parsedGroundId = id === "ground-b" ? 2 : 1;
+                          const parsedGroundId = isGroundB ? 2 : 1;
                           toggleHoldApi("timeslot", mappedId, !isHeld ? "hold" : "release", dateKey, parsedGroundId);
                         }}
                         disabled={isBooked}
@@ -407,7 +409,7 @@ export default function AdminGroundManagement() {
                   })}
                 </View>
               </View>
-            ))}
+            )})}
           </View>
         )}
       </ScrollView>

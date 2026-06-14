@@ -46,6 +46,7 @@ export default function BookingConfirmation() {
     weekendBasePrice,
     weekendPrice12h,
     weekendPrice24h,
+    topUpWallet,
     payFromWallet,
     awardPoints,
     redeemPoints,
@@ -55,14 +56,14 @@ export default function BookingConfirmation() {
     showAlert,
     bookings,
   } = useAdminStore();
-  const [selectedMethod, setSelectedMethod] = useState<"gpay" | "wallet">(
+  const [selectedMethod, setSelectedMethod] = useState<"wallet">(
     "wallet",
   );
   const [shouldRedeem, setShouldRedeem] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [isCouponApplied, setIsCouponApplied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [apiWalletPoints, setApiWalletPoints] = useState<number | null>(null);
+  const [apiWalletBalance, setApiWalletBalance] = useState<number | null>(null);
   const [paymentType, setPaymentType] = useState<"advance" | "full">("advance");
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export default function BookingConfirmation() {
       if (!user?.id) return;
       try {
         const res = await fetch(
-          `https://api.codingboss.in/booking/wallet/?userId=${user.id}`,
+          `https://refined-alone-causing.ngrok-free.dev/booking/wallet/?userId=${user.id}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -80,7 +81,7 @@ export default function BookingConfirmation() {
         );
         if (res.ok) {
           const data = await res.json();
-          setApiWalletPoints(data.wallet_points ?? 0);
+          setApiWalletBalance(data.wallet_balance ?? data.wallet_points ?? null);
         }
       } catch (e) {
         console.warn("Wallet API fetch failed:", e);
@@ -104,12 +105,16 @@ export default function BookingConfirmation() {
     [bookingDate, isFullDay, fullDayType, basePrice, price12h, price24h, weekendBasePrice, weekendPrice12h, weekendPrice24h],
   );
 
-  const totalAmount = isFullDay
-    ? pricing.finalPrice
-    : pricing.finalPrice * selectedSlotIds.length;
-  const surchargeTotal = isFullDay
-    ? pricing.surcharge
-    : pricing.surcharge * selectedSlotIds.length;
+  const baseTotal = isFullDay
+    ? pricing.basePrice
+    : pricing.basePrice * selectedSlotIds.length;
+  const surchargeTotal = 0;
+
+  const platformFee = 1;
+  const gstAmount = Math.floor((baseTotal + platformFee) * 0.18);
+  const gstDiscount = gstAmount;
+
+  const totalAmount = baseTotal + platformFee + gstAmount - gstDiscount;
 
   // Points logic: 100 points = ₹10
   const maxRedeemablePoints = Math.min(
@@ -135,7 +140,7 @@ export default function BookingConfirmation() {
   const processFinalBooking = async () => {
     try {
       try {
-        await fetch("https://api.codingboss.in/booking/payment-success/", {
+        await fetch("https://refined-alone-causing.ngrok-free.dev/booking/payment-success/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -151,9 +156,25 @@ export default function BookingConfirmation() {
         console.error("Payment success fetch error:", err);
       }
 
-      if (selectedMethod === "wallet") {
-        payFromWallet(amountToPay);
+      if (selectedMethod !== "wallet") {
+        try {
+          await fetch("https://refined-alone-causing.ngrok-free.dev/booking/wallet-recharge/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userId: user?.id ? parseInt(user.id.toString(), 10) : 5,
+              amount: amountToPay,
+            }),
+          });
+          topUpWallet(amountToPay);
+        } catch (err) {
+          console.error("Wallet recharge fetch error:", err);
+        }
       }
+
+      payFromWallet(amountToPay);
 
       if (shouldRedeem) {
         redeemPoints(maxRedeemablePoints);
@@ -208,12 +229,11 @@ export default function BookingConfirmation() {
 
   const handleConfirm = async () => {
     if (selectedMethod === "wallet" && user) {
-      const currentPoints = apiWalletPoints !== null ? apiWalletPoints : (user.loyaltyPoints || 0);
-      const pointsRequired = Math.floor(amountToPay / 10);
-      if (currentPoints < pointsRequired) {
+      const currentBalance = apiWalletBalance !== null ? apiWalletBalance : (user.walletBalance || 0);
+      if (currentBalance < amountToPay) {
         showAlert(
-          "Insufficient Points",
-          `You need ${pointsRequired} points to complete this booking. You have ${currentPoints}.`,
+          "Insufficient Balance",
+          `You need ₹${amountToPay} in your wallet to complete this booking. You have ₹${currentBalance}.`,
           "warning",
         );
         return;
@@ -224,81 +244,18 @@ export default function BookingConfirmation() {
     try {
       showAlert(
         "Processing Payment",
-        `Securely processing ₹${amountToPay} via ${selectedMethod === "wallet" ? "NM Greens Wallet" : selectedMethod.toUpperCase()}...`,
+        `Securely processing ₹${amountToPay} via NM Greens Wallet...`,
         "info",
       );
 
       // Simulate payment processing time
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Fetch the endpoint provided
-      try {
-        let finalSlotType = "hourly";
-        let finalSlots = slots || "";
-        let finalIsFullDay = "false";
-        let finalFullDayType = undefined;
 
-        if (isFullDay) {
-          if (fullDayType === "12h") {
-            finalSlotType = "12hr";
-            finalSlots = "12hr";
-            finalIsFullDay = "false";
-          } else if (fullDayType === "24h") {
-            finalSlotType = "24hr";
-            finalSlots = "24hr";
-            finalIsFullDay = "false";
-          } else {
-            finalSlotType = "full_day";
-            finalSlots = "full_day";
-            finalIsFullDay = "true";
-            finalFullDayType = "full_day";
-          }
-        }
 
-        const parsedUserId = user?.id ? parseInt(String(user.id).replace(/\D/g, ''), 10) : 1;
-
-        const payload: any = {
-          userId: isNaN(parsedUserId) ? 1 : parsedUserId,
-          groundId: String(groundId).includes("b") ? 2 : 1,
-          date: date || new Date().toISOString().split("T")[0],
-          slotType: finalSlotType,
-          slots: finalSlots,
-          isFullDay: finalIsFullDay,
-          walletPoints: shouldRedeem ? maxRedeemablePoints : 0
-        };
-        if (finalFullDayType) payload.fullDayType = finalFullDayType;
-
-        const response = await fetch("https://api.codingboss.in/booking/booking-create/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
-            ...(user?.accessToken ? { Authorization: `Token ${user.accessToken}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-        console.log("Booking Create Status:", response.status);
-        if (!response.ok) {
-          console.error("Booking Create Failed Body:", await response.text());
-        }
-      } catch (err) {
-        console.error("Endpoint fetch error:", err);
-      }
-
-      if (selectedMethod === "gpay") {
-        // Mocking GPay success without actual UPI intent
-        Alert.alert(
-          "Payment Processing",
-          "Processing your GPay payment...",
-          [
-            { text: "OK", onPress: () => processFinalBooking() }
-          ]
-        );
-      } else {
-        await processFinalBooking();
-      }
+      await processFinalBooking();
     } catch (error: any) {
-      console.error("Processing Error:", error);
+      console.warn("Processing Error:", error);
       showAlert("Error", `An unexpected error occurred.`, "error");
       setIsProcessing(false);
     }
@@ -386,20 +343,21 @@ export default function BookingConfirmation() {
             </ThemedText>
           </View>
 
-          {pricing.isWeekend && (
-            <View style={styles.priceRow}>
-              <ThemedText style={{ color: "#B71C1C" }}>
-                Weekend Surcharge 🔥
-              </ThemedText>
-              <ThemedText style={{ color: "#B71C1C" }}>
-                +₹{surchargeTotal}
-              </ThemedText>
-            </View>
-          )}
+
 
           <View style={styles.priceRow}>
-            <ThemedText>Taxes & Fees</ThemedText>
-            <ThemedText>₹0</ThemedText>
+            <ThemedText>Platform Fee</ThemedText>
+            <ThemedText>+₹{platformFee}</ThemedText>
+          </View>
+
+          <View style={styles.priceRow}>
+            <ThemedText>GST (18%)</ThemedText>
+            <ThemedText>+₹{gstAmount}</ThemedText>
+          </View>
+
+          <View style={styles.priceRow}>
+            <ThemedText style={{ color: "#10B981" }}>NM Greens Discount</ThemedText>
+            <ThemedText style={{ color: "#10B981" }}>-₹{gstDiscount}</ThemedText>
           </View>
 
           <View style={[styles.priceRow, styles.totalRow]}>
@@ -540,6 +498,7 @@ export default function BookingConfirmation() {
           </ThemedText>
           <View style={styles.paymentGrid}>
             {[
+              { id: "full", label: "Full Payment", amount: fullAmount },
               { id: "advance", label: "Advance Payment", amount: advanceAmount }
             ].map(option => (
               <TouchableOpacity
@@ -593,15 +552,9 @@ export default function BookingConfirmation() {
             {[
               {
                 id: "wallet",
-                label: `NM Greens Wallet (${apiWalletPoints !== null ? apiWalletPoints : user?.loyaltyPoints || 0} pts)`,
+                label: `NM Greens Wallet (₹${apiWalletBalance !== null ? apiWalletBalance : user?.walletBalance || 0})`,
                 icon: "wallet",
                 color: tintColor,
-              },
-              {
-                id: "gpay",
-                label: "Google Pay",
-                icon: "logo-google",
-                color: "#388E3C",
               },
             ].map((method: { id: string; label: string; icon: string; color: string; subtitle?: string }) => (
               <TouchableOpacity
